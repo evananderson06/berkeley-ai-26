@@ -355,54 +355,71 @@ function FlashyTemplate({ candidate }: TemplateProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GARISH — Comic Sans, lime green + hot pink, neon clashing (hard to read)
+// POORLY FORMATTED — Dated Word-doc style: a real attempt, just executed badly
+// Burgundy section headers, blue-tinted header bar, generic Objective section,
+// skills in a checkmark table, alternating row shading. Looks like 2010 Word.
 // ─────────────────────────────────────────────────────────────────────────────
 function GarishTemplate({ candidate }: TemplateProps) {
   const { resume, name, role, yearsExperience } = candidate
-  const cs: React.CSSProperties = { fontFamily: '"Comic Sans MS", "Comic Sans", cursive' }
-  const pillColors = ['#ff6600', '#ff1493', '#228b22', '#0000cd', '#dc143c']
+
+  const sectionHeader: React.CSSProperties = {
+    fontFamily: 'Arial, sans-serif',
+    fontSize: '10px',
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    color: '#7b0000',
+    borderTop: '1px solid #7b0000',
+    borderBottom: '1px solid #7b0000',
+    padding: '2px 0',
+    margin: '0 0 8px',
+  }
+
+  const skillRows = Array.from({ length: Math.ceil(resume.skills.length / 3) })
 
   return (
-    <div style={{ ...cs, background: '#ffffff' }}>
-      {/* Lime green header */}
-      <div style={{ background: '#39ff14', borderBottom: '5px solid #ff1493', padding: '16px 20px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#ff1493', textShadow: '1px 1px 0 rgba(0,0,0,0.15)', margin: 0 }}>
+    <div style={{ fontFamily: 'Cambria, Georgia, serif', background: '#ffffff' }}>
+      {/* Blue-tinted header — classic dated Word résumé look */}
+      <div style={{ background: '#dce6f1', borderBottom: '3px solid #1f497d', padding: '16px 22px 12px', textAlign: 'center' }}>
+        <h1 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1f3864', margin: '0 0 2px', letterSpacing: '2px', textTransform: 'uppercase', fontFamily: 'Arial, sans-serif' }}>
           {name}
         </h1>
-        <p style={{ color: '#8b0000', fontSize: '13px', margin: '4px 0 0' }}>
-          *** {role} *** — {yearsExperience} YEARS EXERIENCE!!!
+        <p style={{ fontSize: '11px', color: '#444', margin: 0, fontFamily: 'Arial, sans-serif' }}>
+          {role}&nbsp;&nbsp;|&nbsp;&nbsp;{yearsExperience} Years of Professional Experience
         </p>
       </div>
 
-      <div style={{ padding: '18px 20px' }}>
-        {/* Summary */}
-        <div style={{ background: '#ffff00', border: '3px solid #ff6600', borderRadius: '4px', padding: '10px 14px', marginBottom: '18px' }}>
-          <p style={{ fontWeight: 'bold', color: '#ff6600', textDecoration: 'underline', margin: '0 0 6px' }}>
-            ABOUT ME:
+      <div style={{ padding: '14px 22px' }}>
+        {/* Generic Objective — very outdated */}
+        <div style={{ marginBottom: '12px' }}>
+          <p style={sectionHeader}>Objective</p>
+          <p style={{ fontSize: '11px', color: '#333', margin: 0, lineHeight: '1.5', fontStyle: 'italic' }}>
+            To obtain a challenging and rewarding position where I can utilize my skills and experience
+            to contribute to organizational success while continuing to grow as a professional.
           </p>
-          <p style={{ color: '#000080', fontSize: '13px', margin: 0 }}>{resume.summary}</p>
+        </div>
+
+        {/* Summary */}
+        <div style={{ marginBottom: '12px' }}>
+          <p style={sectionHeader}>Professional Summary</p>
+          <p style={{ fontSize: '11px', color: '#333', margin: 0, lineHeight: '1.5' }}>{resume.summary}</p>
         </div>
 
         {/* Experience */}
-        <div style={{ marginBottom: '18px' }}>
-          <p style={{ color: '#ff1493', fontWeight: 'bold', fontSize: '17px', textDecoration: 'underline', borderBottom: '2px dashed #ff6600', paddingBottom: '4px', margin: '0 0 12px' }}>
-            MY WORK EXPIRIENCE:
-          </p>
+        <div style={{ marginBottom: '12px' }}>
+          <p style={sectionHeader}>Work Experience</p>
           {resume.experience.map((job, i) => (
-            <div key={i} style={{ border: '2px solid #39ff14', padding: '8px 12px', marginBottom: '10px', background: i % 2 === 0 ? '#fff0f5' : '#f0fff0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <p style={{ fontWeight: 'bold', color: '#8b0000', fontSize: '13px', margin: 0 }}>
-                  {job.title} @ <span style={{ color: '#0000cd' }}>{job.company}</span>
-                </p>
-                <span style={{ fontSize: '11px', color: '#666', flexShrink: 0, marginLeft: '8px' }}>
-                  {job.startDate} to {job.endDate}
+            <div key={i} style={{ marginBottom: '8px', background: i % 2 === 0 ? '#f4f4f4' : '#ffffff', padding: '6px 8px', border: '1px solid #e0e0e0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '2px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#1f3864', fontFamily: 'Arial, sans-serif' }}>{job.title}</span>
+                <span style={{ fontSize: '10px', color: '#666', flexShrink: 0, marginLeft: '8px', fontFamily: 'Arial, sans-serif' }}>
+                  {job.startDate} – {job.endDate}
                 </span>
               </div>
-              <ul style={{ margin: '6px 0 0 18px', padding: 0, listStyle: 'none' }}>
+              <p style={{ fontSize: '11px', color: '#555', fontStyle: 'italic', margin: '0 0 4px' }}>{job.company}</p>
+              <ul style={{ margin: '0 0 0 16px', padding: 0 }}>
                 {job.bullets.map((b, j) => (
-                  <li key={j} style={{ fontSize: '12px', color: '#333', marginBottom: '2px' }}>
-                    → {b}
-                  </li>
+                  <li key={j} style={{ fontSize: '11px', color: '#333', marginBottom: '1px', lineHeight: '1.4' }}>{b}</li>
                 ))}
               </ul>
             </div>
@@ -410,29 +427,35 @@ function GarishTemplate({ candidate }: TemplateProps) {
         </div>
 
         {/* Education */}
-        <div style={{ marginBottom: '18px' }}>
-          <p style={{ color: '#ff1493', fontWeight: 'bold', fontSize: '17px', textDecoration: 'underline', borderBottom: '2px dashed #ff6600', paddingBottom: '4px', margin: '0 0 12px' }}>
-            EDCUATION:
-          </p>
+        <div style={{ marginBottom: '12px' }}>
+          <p style={sectionHeader}>Education</p>
           {resume.education.map((edu, i) => (
-            <p key={i} style={{ fontSize: '13px', color: '#000080', margin: '0 0 4px' }}>
-              📚 <strong>{edu.degree}</strong> — {edu.institution} ({edu.year})
-            </p>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '5px' }}>
+              <div>
+                <p style={{ fontSize: '12px', fontWeight: 'bold', color: '#1f3864', margin: 0, fontFamily: 'Arial, sans-serif' }}>{edu.degree}</p>
+                <p style={{ fontSize: '11px', color: '#555', margin: 0 }}>{edu.institution}</p>
+              </div>
+              <span style={{ fontSize: '10px', color: '#666', flexShrink: 0, marginLeft: '8px', fontFamily: 'Arial, sans-serif' }}>{edu.year}</span>
+            </div>
           ))}
         </div>
 
-        {/* Skills */}
+        {/* Skills — 3-column checkmark table */}
         <div>
-          <p style={{ color: '#ff1493', fontWeight: 'bold', fontSize: '17px', textDecoration: 'underline', borderBottom: '2px dashed #ff6600', paddingBottom: '4px', margin: '0 0 12px' }}>
-            MY SKILLZ!!!
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {resume.skills.map((skill, i) => (
-              <span key={skill} style={{ background: pillColors[i % pillColors.length], color: 'white', padding: '3px 10px', borderRadius: '3px', fontSize: '12px', fontWeight: 'bold' }}>
-                {skill}
-              </span>
-            ))}
-          </div>
+          <p style={sectionHeader}>Skills &amp; Competencies</p>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <tbody>
+              {skillRows.map((_, rowI) => (
+                <tr key={rowI}>
+                  {resume.skills.slice(rowI * 3, rowI * 3 + 3).map((skill, colI) => (
+                    <td key={colI} style={{ fontSize: '11px', color: '#333', padding: '1px 4px', width: '33%', verticalAlign: 'top' }}>
+                      ✓&nbsp;{skill}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

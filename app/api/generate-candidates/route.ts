@@ -39,7 +39,7 @@ const CANDIDATE_TOOL = {
             resumeStyle: {
               type: 'string',
               enum: ['classic', 'modern', 'executive', 'flashy', 'garish', 'chaotic'],
-              description: 'Visual presentation style for the resume. classic=clean minimal; modern=two-column dark sidebar; executive=dark navy header formal serif; flashy=gradient emoji over-the-top; garish=Comic Sans neon clashing colors; chaotic=inconsistent sizes and alignment.',
+              description: 'Visual presentation style for the resume. classic=clean minimal; modern=two-column dark sidebar; executive=dark navy header formal serif; flashy=gradient emoji over-the-top; garish=dated Word-doc style with blue header and burgundy section headers; chaotic=inconsistent sizes and alignment.',
             },
             resume: {
               type: 'object',
@@ -128,7 +128,7 @@ RESUME STYLE ASSIGNMENT — assign one resumeStyle per candidate:
 - "modern": Two-column layout with dark sidebar. Use for one of the adequate candidates — clean and contemporary.
 - "classic": Clean minimal black-and-white. Use for the other adequate candidate — straightforward and safe.
 - "flashy": Purple-pink gradient header, emoji section headers (✨ ⚡ 🏆 🎓), each section in a different coloured rounded box. Use for the deceptive poor candidate — looks impressive and try-hard at first glance.
-- "garish": Comic Sans font, lime green header, hot pink text, neon clashing colours. Use for the clearly underqualified poor candidate.
+- "garish": Dated Word-document style — blue-tinted header, burgundy ALL CAPS section headers with double border lines, a generic Objective paragraph, skills in a 3-column checkmark table, alternating gray row shading on experience. Looks like a 2010 Word résumé template. Use for the clearly underqualified poor candidate.
 - "chaotic": Huge name, inconsistent font sizes, alternating left/right alignment per job. Assign to the clearly underqualified candidate only as an alternative to garish — pick whichever fits the candidate's personality better.
 
 GRAMMAR & SPELLING ERRORS in resume text:
