@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
 import { Candidate, Message } from '@/types'
+import { LoadingScreen } from '@/components/loading-screen'
 import { SummaryNotes } from '@/components/summary-notes'
 
 const AVATAR_COLORS = [
@@ -30,6 +32,8 @@ export default function DecisionPage() {
   const [selected, setSelected] = useState('')
   const [reasoning, setReasoning] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMessage, setLoadingMessage] = useState('Reviewing your interviews…')
+  const [loadingProgress, setLoadingProgress] = useState(5)
 
   useEffect(() => {
     const raw = localStorage.getItem('interviewiq_candidates')
@@ -58,28 +62,52 @@ export default function DecisionPage() {
   async function handleGetFeedback() {
     if (!selected) return
     setLoading(true)
+
     try {
       const res = await fetch('/api/generate-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          candidates,
-          interviews,
-          notes,
-          jobTitle,
-          hiringDecision: selected,
-          reasoning,
-        }),
+        body: JSON.stringify({ candidates, interviews, notes, jobTitle, hiringDecision: selected, reasoning }),
       })
-      const data = await res.json()
-      if (data.feedback) {
-        localStorage.setItem('interviewiq_feedback', JSON.stringify(data.feedback))
+
+      if (!res.body) throw new Error('No response body')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+
+        for (const part of parts) {
+          const line = part.trim()
+          if (!line.startsWith('data: ')) continue
+          const event = JSON.parse(line.slice(6))
+
+          if (event.type === 'progress') {
+            flushSync(() => {
+              setLoadingMessage(event.message)
+              setLoadingProgress(event.progress)
+            })
+          } else if (event.type === 'done') {
+            localStorage.setItem('interviewiq_feedback', JSON.stringify(event.feedback))
+            router.push('/feedback')
+          } else if (event.type === 'error') {
+            throw new Error(event.message)
+          }
+        }
       }
-      router.push('/feedback')
-    } finally {
+    } catch {
       setLoading(false)
     }
   }
+
+  if (loading) return <LoadingScreen message={loadingMessage} progress={loadingProgress} />
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
@@ -139,7 +167,7 @@ export default function DecisionPage() {
           disabled={!selected || loading}
           className="bg-indigo-600 hover:bg-indigo-700 text-white"
         >
-          {loading ? 'Generating feedback…' : 'Get Feedback →'}
+          Get Feedback →
         </Button>
       </div>
     </div>

@@ -77,33 +77,59 @@ ${transcript}`
   }).join('\n\n')
 }
 
+const FEEDBACK_STEPS = [
+  { message: 'Reading your interview transcripts…', progress: 15 },
+  { message: 'Analyzing question quality…', progress: 35 },
+  { message: 'Checking for missed red flags…', progress: 55 },
+  { message: 'Identifying key moments…', progress: 72 },
+  { message: 'Calculating your score…', progress: 88 },
+]
+
 export async function POST(req: NextRequest) {
-  try {
-    const body: GenerateFeedbackRequest = await req.json()
+  const body: GenerateFeedbackRequest = await req.json()
 
-    if (!Array.isArray(body.candidates) || body.candidates.length === 0) {
-      return NextResponse.json({ error: 'candidates is required' }, { status: 400 })
-    }
-    if (!body.hiringDecision || typeof body.hiringDecision !== 'string') {
-      return NextResponse.json({ error: 'hiringDecision is required' }, { status: 400 })
-    }
+  if (!Array.isArray(body.candidates) || body.candidates.length === 0) {
+    return NextResponse.json({ error: 'candidates is required' }, { status: 400 })
+  }
+  if (!body.hiringDecision || typeof body.hiringDecision !== 'string') {
+    return NextResponse.json({ error: 'hiringDecision is required' }, { status: 400 })
+  }
 
-    const chosenCandidate = body.candidates.find((c) => c.id === body.hiringDecision)
-    const transcriptBlock = formatTranscripts(body.candidates, body.interviews ?? {}, body.notes ?? {})
+  const encoder = new TextEncoder()
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      tools: [FEEDBACK_TOOL],
-      tool_choice: { type: 'tool', name: 'generate_feedback' },
-      system: `You are an expert hiring coach evaluating an interviewer's performance in a simulated interview session.
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+
+      try {
+        send({ type: 'progress', message: 'Reviewing your interviews…', progress: 5 })
+
+        const chosenCandidate = body.candidates.find((c) => c.id === body.hiringDecision)
+        const transcriptBlock = formatTranscripts(body.candidates, body.interviews ?? {}, body.notes ?? {})
+
+        // Trickle steps while Claude is generating (one per ~1.5s on average)
+        let stepIndex = 0
+        const stepTimer = setInterval(() => {
+          if (stepIndex < FEEDBACK_STEPS.length) {
+            send({ type: 'progress', ...FEEDBACK_STEPS[stepIndex] })
+            stepIndex++
+          }
+        }, 1800)
+
+        const message = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2048,
+          tools: [FEEDBACK_TOOL],
+          tool_choice: { type: 'tool', name: 'generate_feedback' },
+          system: `You are an expert hiring coach evaluating an interviewer's performance in a simulated interview session.
 You have access to the full candidate profiles (including hidden quality tiers and red/green flags that the interviewer could not see), all interview transcripts, and the interviewer's notes.
 Be specific, honest, and constructive. Reference actual quotes and moments from the transcripts when possible.
 The "correct hire" is always the candidate with qualityTier "strong". If no strong candidate exists, pick the best "adequate" one.`,
-      messages: [
-        {
-          role: 'user',
-          content: `Please evaluate my interviewing performance for this ${body.jobTitle ? `${body.jobTitle} ` : ''}hiring session.
+          messages: [
+            {
+              role: 'user',
+              content: `Please evaluate my interviewing performance for this ${body.jobTitle ? `${body.jobTitle} ` : ''}hiring session.
 
 INTERVIEWER'S HIRING DECISION: ${chosenCandidate?.name ?? body.hiringDecision}
 INTERVIEWER'S REASONING: ${body.reasoning || '(no reasoning provided)'}
@@ -117,20 +143,36 @@ Evaluate:
 3. Whether they gave appropriate weight to strong vs. weak candidates
 4. Specific moments that demonstrate good or poor interviewing technique
 5. Whether they made the right hiring decision`,
-        },
-      ],
-    })
+            },
+          ],
+        })
 
-    const toolUseBlock = message.content.find((b) => b.type === 'tool_use')
-    if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
-      throw new Error(`Claude did not return tool_use. stop_reason: ${message.stop_reason}`)
-    }
+        clearInterval(stepTimer)
 
-    const feedback = toolUseBlock.input as FeedbackReport
+        const toolBlock = message.content.find((b) => b.type === 'tool_use')
+        if (!toolBlock || toolBlock.type !== 'tool_use') {
+          throw new Error(`No tool_use block. stop_reason: ${message.stop_reason}`)
+        }
 
-    return NextResponse.json({ feedback })
-  } catch (err) {
-    console.error('[generate-feedback]', err)
-    return NextResponse.json({ error: 'Failed to generate feedback' }, { status: 500 })
-  }
+        const feedback = toolBlock.input as FeedbackReport
+
+        send({ type: 'progress', message: 'Done!', progress: 100 })
+        send({ type: 'done', feedback })
+      } catch (err) {
+        console.error('[generate-feedback]', err)
+        send({ type: 'error', message: 'Failed to generate feedback' })
+      }
+
+      controller.close()
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  })
 }

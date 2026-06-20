@@ -87,29 +87,51 @@ const CANDIDATE_TOOL = {
   },
 }
 
+// Each entry fires when we detect the Nth "yearsExperience" token in the streaming JSON,
+// meaning Claude has started writing that candidate's core fields.
+const CANDIDATE_MILESTONES = [
+  { message: 'Creating candidate personas…', progress: 15 },
+  { message: 'Drafting résumés…', progress: 30 },
+  { message: 'Building career histories…', progress: 48 },
+  { message: 'Hiding a few red flags…', progress: 65 },
+  { message: 'Finishing up…', progress: 80 },
+]
+
 export async function POST(req: NextRequest) {
-  try {
-    const body: GenerateCandidatesRequest = await req.json()
+  const body: GenerateCandidatesRequest = await req.json()
 
-    if (!body.jobTitle || typeof body.jobTitle !== 'string') {
-      return NextResponse.json({ error: 'jobTitle is required' }, { status: 400 })
-    }
-    if (!body.jobDescription || typeof body.jobDescription !== 'string') {
-      return NextResponse.json({ error: 'jobDescription is required' }, { status: 400 })
-    }
+  if (!body.jobTitle || typeof body.jobTitle !== 'string') {
+    return NextResponse.json({ error: 'jobTitle is required' }, { status: 400 })
+  }
+  if (!body.jobDescription || typeof body.jobDescription !== 'string') {
+    return NextResponse.json({ error: 'jobDescription is required' }, { status: 400 })
+  }
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8096,
-      tools: [CANDIDATE_TOOL],
-      tool_choice: { type: 'tool', name: 'create_candidates' },
-      system: `You are a hiring simulation tool. Generate realistic, believable job candidates for interview practice.
+  const encoder = new TextEncoder()
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+
+      try {
+        send({ type: 'progress', message: 'Reviewing job requirements…', progress: 5 })
+
+        let accumulatedJson = ''
+        let candidatesDetected = 0
+
+        const claudeStream = anthropic.messages.stream({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8096,
+          tools: [CANDIDATE_TOOL],
+          tool_choice: { type: 'tool', name: 'create_candidates' },
+          system: `You are a hiring simulation tool. Generate realistic, believable job candidates for interview practice.
 Candidates should have plausible career histories at real-sounding companies with specific, quantified achievements.
 Use diverse names. Make the candidates feel like real people, not archetypes.`,
-      messages: [
-        {
-          role: 'user',
-          content: `Generate 5 candidates for this role:
+          messages: [
+            {
+              role: 'user',
+              content: `Generate 5 candidates for this role:
 
 Job Title: ${body.jobTitle}
 Job Description:
@@ -129,43 +151,69 @@ RESUME STYLE ASSIGNMENT — assign one resumeStyle per candidate:
 - "classic": Clean minimal black-and-white. Use for the other adequate candidate — straightforward and safe.
 - "flashy": Purple-pink gradient header, emoji section headers (✨ ⚡ 🏆 🎓), each section in a different coloured rounded box. Use for the deceptive poor candidate — looks impressive and try-hard at first glance.
 - "garish": Dated Word-document style — blue-tinted header, burgundy ALL CAPS section headers with double border lines, a generic Objective paragraph, skills in a 3-column checkmark table, alternating gray row shading on experience. Looks like a 2010 Word résumé template. Use for the clearly underqualified poor candidate.
-- "chaotic": Huge name, inconsistent font sizes, alternating left/right alignment per job. Assign to the clearly underqualified candidate only as an alternative to garish — pick whichever fits the candidate's personality better.
+- "chaotic": Huge name, inconsistent font sizes, alternating left/right alignment per job. Assign to the clearly underqualified candidate only as an alternative to garish.
 
 GRAMMAR & SPELLING ERRORS in resume text:
-- For the clearly underqualified poor candidate (garish or chaotic style), introduce 3–5 realistic errors spread across their resume summary and bullet points. Use: typos ("responsable", "managment", "expirience", "gratuate"), grammar mistakes ("responsible of" not "for", "assist with" not "assisted", "I have contribute"), missing punctuation, random lowercase where capitals belong, run-on sentences. Errors should feel like a rushed first draft — not gibberish, just noticeably unpolished.
-- The deceptive poor candidate must have flawless, impressive-sounding prose (their problems only surface in interviews).
+- For the clearly underqualified poor candidate (garish or chaotic style), introduce 3–5 realistic errors spread across their resume summary and bullet points. Use: typos ("responsable", "managment", "expirience", "gratuate"), grammar mistakes ("responsible of" not "for"), missing punctuation, random lowercase where capitals belong, run-on sentences. Errors should feel like a rushed first draft.
+- The deceptive poor candidate must have flawless, impressive-sounding prose.
 - Strong and adequate candidates must have polished, professional resume text with no errors.`,
-        },
-      ],
-    })
+            },
+          ],
+        })
 
-    const toolUseBlock = message.content.find((b) => b.type === 'tool_use')
+        for await (const event of claudeStream) {
+          if (
+            event.type === 'content_block_delta' &&
+            event.delta.type === 'input_json_delta'
+          ) {
+            accumulatedJson += event.delta.partial_json
 
-    console.log('[generate-candidates] stop_reason:', message.stop_reason)
-    console.log('[generate-candidates] content blocks:', JSON.stringify(message.content.map(b => ({ type: b.type, ...(b.type === 'tool_use' ? { name: b.name, inputKeys: Object.keys(b.input ?? {}) } : {}) }))))
+            // "yearsExperience" appears exactly once per candidate — use it as a progress marker
+            const detected = (accumulatedJson.match(/"yearsExperience"/g) ?? []).length
+            if (detected > candidatesDetected) {
+              candidatesDetected = detected
+              const milestone = CANDIDATE_MILESTONES[candidatesDetected - 1]
+              if (milestone) send({ type: 'progress', ...milestone })
+            }
+          }
+        }
 
-    if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
-      throw new Error(`Claude did not return a tool_use block. stop_reason: ${message.stop_reason}`)
-    }
+        const finalMessage = await claudeStream.finalMessage()
+        const toolBlock = finalMessage.content.find((b) => b.type === 'tool_use')
 
-    console.log('[generate-candidates] tool input keys:', Object.keys(toolUseBlock.input ?? {}))
+        if (!toolBlock || toolBlock.type !== 'tool_use') {
+          throw new Error(`No tool_use block. stop_reason: ${finalMessage.stop_reason}`)
+        }
 
-    const input = toolUseBlock.input as Record<string, unknown>
-    const rawCandidates = input['candidates']
+        const input = toolBlock.input as Record<string, unknown>
+        const rawCandidates = input['candidates']
 
-    if (!Array.isArray(rawCandidates)) {
-      console.error('[generate-candidates] unexpected input structure:', JSON.stringify(input).slice(0, 500))
-      throw new Error(`Expected candidates array in tool input, got ${typeof rawCandidates}`)
-    }
+        if (!Array.isArray(rawCandidates)) {
+          throw new Error(`Expected candidates array, got ${typeof rawCandidates}`)
+        }
 
-    const withIds: Candidate[] = (rawCandidates as Omit<Candidate, 'id'>[]).map((c, i) => ({
-      ...c,
-      id: `c${i + 1}_${uuidv4().slice(0, 8)}`,
-    }))
+        const withIds: Candidate[] = (rawCandidates as Omit<Candidate, 'id'>[]).map((c, i) => ({
+          ...c,
+          id: `c${i + 1}_${uuidv4().slice(0, 8)}`,
+        }))
 
-    return NextResponse.json({ candidates: withIds })
-  } catch (err) {
-    console.error('[generate-candidates]', err)
-    return NextResponse.json({ error: 'Failed to generate candidates' }, { status: 500 })
-  }
+        send({ type: 'progress', message: 'Ready!', progress: 100 })
+        send({ type: 'done', candidates: withIds })
+      } catch (err) {
+        console.error('[generate-candidates]', err)
+        send({ type: 'error', message: 'Failed to generate candidates' })
+      }
+
+      controller.close()
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  })
 }
