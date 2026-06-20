@@ -1,83 +1,52 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
-import { Candidate, Message } from '@/types'
+import { Candidate } from '@/types'
 import { cn } from '@/lib/utils'
+import { useVoiceInterview } from '@/lib/voice/useVoiceInterview'
+import { VOICE } from '@/lib/voice/config'
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  idle: 'Not started',
+  connecting: 'Connecting…',
+  listening: 'Listening…',
+  thinking: 'Thinking…',
+  speaking: 'Speaking…',
+  paused: 'Paused',
+  error: 'Error',
+}
+
 export default function InterviewPage() {
   const params = useParams()
+  const router = useRouter()
   const candidateId = params.id as string
 
   const [candidate, setCandidate] = useState<Candidate | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
   const [notes, setNotes] = useState('')
-  const [sending, setSending] = useState(false)
   const [notesSaved, setNotesSaved] = useState(false)
+  const [ending, setEnding] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const raw = localStorage.getItem('interviewiq_candidates')
     const candidates: Candidate[] = raw ? JSON.parse(raw) : PLACEHOLDER_CANDIDATES
-    const found = candidates.find((c) => c.id === candidateId) ?? null
-    setCandidate(found)
-    setMessages([
-      {
-        role: 'assistant',
-        content: `Hi, thanks for having me. I'm ${found?.name ?? 'the candidate'}. I'm excited to learn more about this opportunity.`,
-        timestamp: new Date().toISOString(),
-      },
-    ])
+    setCandidate(candidates.find((c) => c.id === candidateId) ?? null)
   }, [candidateId])
+
+  const { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop } =
+    useVoiceInterview({ candidate, candidateId })
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  async function sendMessage() {
-    if (!input.trim() || sending || !candidate) return
-
-    const userMsg: Message = { role: 'user', content: input, timestamp: new Date().toISOString() }
-    setMessages((prev) => [...prev, userMsg])
-    const outgoing = input
-    setInput('')
-    setSending(true)
-
-    try {
-      const res = await fetch('/api/interview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          candidate,
-          messages,
-          newMessage: outgoing,
-        }),
-      })
-      const data = await res.json()
-      const assistantMsg: Message = { role: 'assistant', content: data.reply, timestamp: new Date().toISOString() }
-      setMessages((prev) => {
-        const next = [...prev, assistantMsg]
-        localStorage.setItem(`interviewiq_messages_${candidateId}`, JSON.stringify(next))
-        return next
-      })
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '(Error — could not reach candidate)', timestamp: new Date().toISOString() },
-      ])
-    } finally {
-      setSending(false)
-    }
-  }
+  }, [messages, interim])
 
   async function saveNotes() {
     localStorage.setItem(`interviewiq_notes_${candidateId}`, notes)
@@ -90,29 +59,77 @@ export default function InterviewPage() {
     setTimeout(() => setNotesSaved(false), 2000)
   }
 
+  async function endInterview() {
+    if (ending) return
+    setEnding(true)
+    stop()
+    const hadTurns = messages.some((m) => m.role === 'user')
+    if (hadTurns && candidate) {
+      try {
+        localStorage.setItem(`interviewiq_completed_${candidateId}`, 'true')
+        const res = await fetch('/api/interview-summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidate, messages }),
+        })
+        const data = await res.json()
+        if (data.summary) localStorage.setItem(`interviewiq_summary_${candidateId}`, data.summary)
+      } catch {
+        /* still navigate — candidate is marked completed even if summary failed */
+      }
+    }
+    router.push('/candidates')
+  }
+
+  const active =
+    status === 'connecting' || status === 'listening' || status === 'thinking' || status === 'speaking'
+  const meterPct = Math.min(100, (level / 0.3) * 100)
+  const markerPct = Math.min(100, (threshold / 0.3) * 100)
+
   return (
     <div className="flex flex-col h-[calc(100vh-56px)]">
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
         <div>
           <p className="font-semibold text-slate-900 text-sm">{candidate?.name ?? '…'}</p>
-          <p className="text-xs text-slate-400">{candidate?.role} · {candidate?.yearsExperience} yrs exp</p>
+          <p className="text-xs text-slate-400">
+            {candidate?.role} · {candidate?.yearsExperience} yrs exp
+          </p>
         </div>
-        <Button asChild variant="outline" size="sm" className="border-slate-200 text-slate-600 hover:bg-slate-50">
-          <Link href="/candidates">End Interview</Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              'text-xs font-medium px-2 py-1 rounded',
+              status === 'listening' && 'bg-emerald-50 text-emerald-700',
+              status === 'speaking' && 'bg-indigo-50 text-indigo-700',
+              status === 'thinking' && 'bg-amber-50 text-amber-700',
+              status === 'connecting' && 'bg-slate-100 text-slate-500',
+              status === 'paused' && 'bg-slate-100 text-slate-600',
+              status === 'error' && 'bg-red-50 text-red-700',
+              status === 'idle' && 'bg-slate-100 text-slate-400'
+            )}
+          >
+            {STATUS_LABEL[status]}
+          </span>
+          <Button
+            onClick={endInterview}
+            disabled={ending}
+            variant="outline"
+            size="sm"
+            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
+            {ending ? 'Ending…' : 'End Interview'}
+          </Button>
+        </div>
       </div>
 
-      {/* Body: chat + notes */}
+      {/* Body: transcript + notes */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Chat */}
+        {/* Transcript + voice controls */}
         <div className="flex flex-col flex-1 border-r border-slate-200">
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
             {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={cn('flex gap-3', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}
-              >
+              <div key={i} className={cn('flex gap-3', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
                 <div
                   className={cn(
                     'max-w-[70%] rounded-xl px-4 py-2.5 text-sm leading-relaxed',
@@ -122,43 +139,91 @@ export default function InterviewPage() {
                   )}
                 >
                   {msg.content}
-                  <p className={cn('text-[10px] mt-1', msg.role === 'user' ? 'text-indigo-200' : 'text-slate-400')}>
+                  <p
+                    className={cn(
+                      'text-[10px] mt-1',
+                      msg.role === 'user' ? 'text-indigo-200' : 'text-slate-400'
+                    )}
+                  >
                     {formatTime(msg.timestamp)}
                   </p>
                 </div>
               </div>
             ))}
-            {sending && (
+
+            {interim && (
+              <div className="flex gap-3 flex-row-reverse">
+                <div className="max-w-[70%] rounded-xl px-4 py-2.5 text-sm leading-relaxed bg-indigo-50 text-indigo-400 italic">
+                  {interim}
+                </div>
+              </div>
+            )}
+
+            {status === 'thinking' && (
               <div className="flex gap-3">
                 <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5">
-                  <span className="text-slate-400 text-sm">Typing…</span>
+                  <span className="text-slate-400 text-sm">Thinking…</span>
                 </div>
               </div>
             )}
             <div ref={bottomRef} />
           </div>
 
-          <div className="border-t border-slate-200 bg-white px-4 py-3 flex gap-3">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  sendMessage()
-                }
-              }}
-              placeholder="Ask a question… (Enter to send, Shift+Enter for newline)"
-              rows={2}
-              className="resize-none border-slate-200 text-sm"
-            />
-            <Button
-              onClick={sendMessage}
-              disabled={sending || !input.trim() || !candidate}
-              className="self-end bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
-            >
-              Send
-            </Button>
+          {/* Voice control bar */}
+          <div className="border-t border-slate-200 bg-white px-4 py-3 space-y-3">
+            {error && <p className="text-xs text-red-600">{error}</p>}
+
+            <div className="flex items-center gap-4">
+              {active ? (
+                <Button onClick={pause} variant="outline" className="border-slate-300 text-slate-700">
+                  ⏸ Pause
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => start()}
+                  disabled={!candidate || ending}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  {status === 'paused' || messages.length > 0 ? '▶ Resume interview' : '🎙 Start voice interview'}
+                </Button>
+              )}
+
+              <div className="flex-1">
+                <div className="relative h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-full transition-[width] duration-75',
+                      level > threshold ? 'bg-emerald-500' : 'bg-slate-300'
+                    )}
+                    style={{ width: `${meterPct}%` }}
+                  />
+                  <div
+                    className="absolute top-[-2px] h-3 w-0.5 bg-red-500"
+                    style={{ left: `${markerPct}%` }}
+                    title="Barge-in threshold"
+                  />
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 w-28">Barge-in threshold</span>
+                  <input
+                    type="range"
+                    min={0.01}
+                    max={0.3}
+                    step={0.005}
+                    value={threshold}
+                    onChange={(e) => setThreshold(parseFloat(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="text-[10px] text-slate-400 w-10 text-right">{threshold.toFixed(3)}</span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Speak naturally. Talk over the candidate (above the red marker) and it stops to listen. Pause and
+              resume any time without losing the conversation. Default threshold {VOICE.THRESHOLD}; lower with
+              headphones, raise on open speakers.
+            </p>
           </div>
         </div>
 
