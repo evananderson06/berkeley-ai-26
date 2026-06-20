@@ -1,3 +1,5 @@
+export type ResumeStyle = 'classic' | 'modern' | 'executive' | 'flashy' | 'garish' | 'chaotic'
+
 export interface WorkExperience {
   company: string
   title: string
@@ -31,6 +33,7 @@ export interface Candidate {
   redFlags: string[]
   greenFlags: string[]
   resume: Resume
+  resumeStyle?: ResumeStyle
 }
 
 export interface Message {
