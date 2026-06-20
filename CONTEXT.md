@@ -31,6 +31,28 @@ A long-lived bidirectional WebSocket (persistent Deepgram STT/TTS sockets + a st
 
 **We are NOT deploying this hackathon** — both run locally (Next on `:3000`, voice server on `:8080`), so there's no `wss://` / mixed-content / serverless concern: `ws://localhost` just works and mic capture is allowed on `localhost`. *Forward-looking note only: if you ever deploy, Vercel serverless can't hold a WebSocket — the voice server would need a Node host (Railway/Render/Fly) and the browser would need `wss://`.*
 
+### 0.2 Implementation Status — what's actually built (as of `12b6e36 add feedback (lowkey mvp)`)
+
+The team has wired a **real, text-based MVP of the full loop** — three live Claude agents — ahead of voice and the multi-agent verdict. That's the "strict MVP first" path (§10), just in **text before voice**. Treat this as the safety-net/fallback loop to build voice on top of.
+
+| Piece | Status | File | Notes |
+|---|---|---|---|
+| Candidate generation | ✅ real Claude | `app/api/generate-candidates/route.ts` | `claude-sonnet-4-6`, **forced tool-use** (`create_candidates`). **5** candidates, fixed distribution (1 strong / 2 adequate / 1 deceptive / 1 underqualified). |
+| Text interview (candidate roleplay) | ✅ real Claude | `app/api/interview/route.ts` | `claude-sonnet-4-6`. System prompt shaped by `qualityTier` + `redFlags`/`greenFlags`. **Text chat, not voice.** |
+| **Feedback report** *(the new commit)* | ✅ real Claude | `app/api/generate-feedback/route.ts` | `claude-sonnet-4-6`, forced tool-use (`generate_feedback`) → `FeedbackReport` { overallScore, whatWentWell[], areasForImprovement[], correctHire, userPickedCorrectly, keyMoments[] }. Sees all transcripts + notes + hidden tiers/flags; "correct hire" = the `strong` candidate. |
+| State | ⚠️ **localStorage**, not Redis | client pages | `interviewiq_candidates`, `interviewiq_job`, `interviewiq_messages_{id}`, `interviewiq_notes_{id}`, `interviewiq_feedback`. `lib/redis.ts` + `save-notes` exist but are unused/no-op. |
+| Structured output | **forced tool-use** | all 3 routes | `tool_choice:{type:'tool'}` + read `tool_use.input`. Valid alternative to `messages.parse`/`output_config` — **treat tool-use as the repo's structured-output convention** (§6/§8). |
+
+**How the built feedback maps to the plan:** today's `generate-feedback` is an **MVP of the Final Verdict (§7.5)** — a single end-of-session report that already does correct-hire + was-the-user-right + key moments. It is **not yet** the planned multi-stage flow: no per-interview **Summary** (§7.3), no **Fit Assessor** (§7.4), and the verdict isn't streamed, isn't opinionated/willing-to-disagree, and lacks the resume-vs-reality + timestamped-coaching richness (§8 `FinalVerdict`).
+
+**Deltas from the target plan (decisions as you build forward):**
+- **🔒 Truthfulness is client-exposed today.** The full `Candidate` (incl. `qualityTier`/`redFlags`/`greenFlags`) lives in localStorage and is POSTed back to `generate-feedback` — so the "hidden" info isn't actually hidden. Fix = the server-side split (§4.1 `CandidateRecord` vs `CandidatePublic`), which requires moving state localStorage → Redis.
+- **5 candidates + hardcoded distribution** vs `NUM_CANDIDATES=3` + per-call tier assignment (§7.1).
+- **`claude-sonnet-4-6` hardcoded in every route** vs the `model_router.ts` switcher (§6); no OpenAI path yet.
+- **Text interview** vs the voice pipeline (§3); voice + the Node WS server are still greenfield.
+- Template framing still present: model = `qualityTier` (strong/adequate/poor) + red/green flags, **not yet** `truthfulness` (honest/mixed/embellished) + resume-vs-reality.
+- Reuse, don't rewrite: port the working tool-use + prompt patterns from these three routes into `lib/agents/*` behind the router as you migrate.
+
 ---
 
 ## 1. Product Flow (the 7 steps the demo shows)
@@ -275,12 +297,12 @@ async function generateJSON<T>(o: GenOpts & { schema: ZodType<T> }): Promise<T>
 
 Five agents, all via the router. (Observer = stretch.)
 
-### 7.1 Overseer (Step 2 — runs once, founder waits)
+### 7.1 Overseer (Step 2 — runs once, founder waits)   🔲 *pending — today's `generate-candidates` (5 candidates, public flags) is the precursor*
 Input: job title/description + company context + `NUM_CANDIDATES`. **Generate the N candidates in parallel** (one `generateJSON` call per candidate, `Promise.all`) and **assign the truthfulness tier per call** so the spread is guaranteed AND latency ≈ one candidate (founder waits less): tiers cycle `['honest','embellished','mixed', …]` across N. Each call returns one `{ resume, displayName, role, yearsExperience, truthfulness:{overall,notes}, preInterviewScore }`. Assign an Aura voice per candidate from a small pool. Store full records (incl. truthfulness) in Redis; return only `toPublic(...)`.
 
 System prompt (per-candidate): *"You generate ONE realistic job candidate for the role below. You are assigned truthfulness tier = {tier}. Produce (a) a polished RESUME a real applicant would submit, and (b) a private TRUTHFULNESS profile for the interviewer's simulator. honest → resume matches reality, can answer deeply. embellished → resume inflates scope/ownership; they can describe the work but crack under architectural/decision depth; name exactly where. mixed → some sections solid, some shaky; specify which. Also score paper-fit to the job (pre_interview_score 0–100). The resume must NOT hint at the truthfulness tier."*
 
-### 7.2 Candidate (Step 3 — voice, streaming, on the voice server)
+### 7.2 Candidate (Step 3 — voice, streaming, on the voice server)   ✅ *text version built (`/api/interview`); voice + truthfulness inputs pending*
 Settings: thinking off, effort low, `maxTokens≈384`, stream → Aura. System prompt = **resume (identity) + truthfulness profile (behavior)**:
 
 ```
@@ -308,7 +330,7 @@ Input: candidate resume + truthfulness + this interview's transcript. Output: a 
 ### 7.4 Fit Assessor (Step 5 — background, after all interviews)
 Input: all candidates' profiles + summaries + pre_interview_scores + transcripts. Output per candidate: `{ candidateId, postInterviewScore, rationale }` — a *slight* adjustment of the pre-score given how the interview actually went. **Not shown to the founder.**
 
-### 7.5 Final Verdict (Step 7 — streamed, the money shot)
+### 7.5 Final Verdict (Step 7 — streamed, the money shot)   ✅ *MVP built as `/api/generate-feedback` (single report); needs streaming + opinion/disagreement + resume-vs-reality + timestamps*
 Input: everything — resumes, **truthfulness profiles**, transcripts, pre/post scores, the founder's pick. Streamed for the reveal. System prompt: *"You are a blunt, experienced hiring advisor talking to a founder (not HR). You have the ground truth the founder never saw. Say who the best fit actually is and why; state plainly whether the founder's pick was right or wrong; call out what they missed, let slide, or misjudged across interviews; identify where resume-vs-reality gaps were exposed or slipped through; cite specific moments with timestamps. Have a real opinion and disagree with the founder when the evidence warrants — never just validate the choice. Plain language, direct, founder-to-founder."* Output schema in §8.
 
 ### 7.6 Observer (stretch — live, on the voice server)
@@ -390,7 +412,7 @@ Pre-authorized fallback: if linear16 capture isn't flowing by ~hour 7, switch to
 
 | Risk | Mitigation |
 |---|---|
-| **🔒 Truthfulness leaks to the client** | Route every client payload through `toPublic()`; never include `truthfulness`/scores in `/candidates` or WS messages. The Candidate prompt forbids revealing it aloud. Add a test asserting `/candidates` JSON contains no `truthfulness`/`notes`/`preInterviewScore`. |
+| **🔒 Truthfulness leaks to the client** *(LIVE TODAY — see §0.2: full candidates incl. hidden flags sit in localStorage and are POSTed to `generate-feedback`)* | Route every client payload through `toPublic()`; never include `truthfulness`/scores in `/candidates` or WS messages. Move state localStorage → Redis so hidden fields never reach the browser. The Candidate prompt forbids revealing it aloud. Add a test asserting `/candidates` JSON contains no `truthfulness`/`notes`/`preInterviewScore`. |
 | **Not deploying (hackathon)** | Both run locally (Next `:3000`, voice server `:8080`, `ws://localhost`) — no TLS/mixed-content concern. If you deploy later, Vercel can't host the WS — voice needs a Node host + `wss://`. |
 | **Candidate breaks character / over-hedges / under-hedges** | Tight §7.2 prompt (answer from resume, hedge only where truthfulness says). Test all three tiers early; tune wording. |
 | **Overseer latency (founder waiting)** | Overseer = `claude-sonnet-4-6` (opus-4-8 was too slow); generate N candidates **in parallel**; stream a loading state. |
