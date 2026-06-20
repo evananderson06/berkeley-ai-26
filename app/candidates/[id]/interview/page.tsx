@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
-import { Message } from '@/types'
+import { Candidate, Message } from '@/types'
 import { cn } from '@/lib/utils'
 
 function formatTime(ts: string) {
@@ -16,15 +16,9 @@ function formatTime(ts: string) {
 export default function InterviewPage() {
   const params = useParams()
   const candidateId = params.id as string
-  const candidate = PLACEHOLDER_CANDIDATES.find((c) => c.id === candidateId)
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: `Hi, thanks for having me. I'm ${candidate?.name ?? 'the candidate'}. I'm excited to learn more about this role.`,
-      timestamp: new Date().toISOString(),
-    },
-  ])
+  const [candidate, setCandidate] = useState<Candidate | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [notes, setNotes] = useState('')
   const [sending, setSending] = useState(false)
@@ -32,13 +26,29 @@ export default function InterviewPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const raw = localStorage.getItem('interviewiq_candidates')
+    const candidates: Candidate[] = raw ? JSON.parse(raw) : PLACEHOLDER_CANDIDATES
+    const found = candidates.find((c) => c.id === candidateId) ?? null
+    setCandidate(found)
+    setMessages([
+      {
+        role: 'assistant',
+        content: `Hi, thanks for having me. I'm ${found?.name ?? 'the candidate'}. I'm excited to learn more about this opportunity.`,
+        timestamp: new Date().toISOString(),
+      },
+    ])
+  }, [candidateId])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
   async function sendMessage() {
-    if (!input.trim() || sending) return
+    if (!input.trim() || sending || !candidate) return
+
     const userMsg: Message = { role: 'user', content: input, timestamp: new Date().toISOString() }
     setMessages((prev) => [...prev, userMsg])
+    const outgoing = input
     setInput('')
     setSending(true)
 
@@ -46,13 +56,19 @@ export default function InterviewPage() {
       const res = await fetch('/api/interview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidateId, messages, newMessage: input }),
+        body: JSON.stringify({
+          candidate,
+          messages,
+          newMessage: outgoing,
+        }),
       })
       const data = await res.json()
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: data.reply, timestamp: new Date().toISOString() },
-      ])
+      const assistantMsg: Message = { role: 'assistant', content: data.reply, timestamp: new Date().toISOString() }
+      setMessages((prev) => {
+        const next = [...prev, assistantMsg]
+        localStorage.setItem(`interviewiq_messages_${candidateId}`, JSON.stringify(next))
+        return next
+      })
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -64,6 +80,7 @@ export default function InterviewPage() {
   }
 
   async function saveNotes() {
+    localStorage.setItem(`interviewiq_notes_${candidateId}`, notes)
     await fetch('/api/save-notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -78,7 +95,7 @@ export default function InterviewPage() {
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
         <div>
-          <p className="font-semibold text-slate-900 text-sm">{candidate?.name ?? 'Candidate'}</p>
+          <p className="font-semibold text-slate-900 text-sm">{candidate?.name ?? '…'}</p>
           <p className="text-xs text-slate-400">{candidate?.role} · {candidate?.yearsExperience} yrs exp</p>
         </div>
         <Button asChild variant="outline" size="sm" className="border-slate-200 text-slate-600 hover:bg-slate-50">
@@ -137,7 +154,7 @@ export default function InterviewPage() {
             />
             <Button
               onClick={sendMessage}
-              disabled={sending || !input.trim()}
+              disabled={sending || !input.trim() || !candidate}
               className="self-end bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
             >
               Send

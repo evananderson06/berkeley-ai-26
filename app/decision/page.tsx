@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
+import { Candidate, Message } from '@/types'
 
 const AVATAR_COLORS = [
   'bg-indigo-100 text-indigo-700',
@@ -18,29 +19,56 @@ const AVATAR_COLORS = [
   'bg-amber-100 text-amber-700',
 ]
 
-const PLACEHOLDER_NOTES: Record<string, string> = {
-  c1: 'Asked great clarifying questions. Clearly understood system design at scale.',
-  c2: 'Solid answers, nothing wrong — but nothing stood out either.',
-  c3: 'Enthusiastic and quick. Struggled a bit with the architecture question.',
-  c4: 'Super polished. But couldn\'t explain how the migration actually worked when I pressed.',
-  c5: 'Nice energy. Definitely needs a couple more years.',
-}
-
 export default function DecisionPage() {
   const router = useRouter()
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [interviews, setInterviews] = useState<Record<string, Message[]>>({})
+  const [jobTitle, setJobTitle] = useState('')
   const [selected, setSelected] = useState('')
   const [reasoning, setReasoning] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const raw = localStorage.getItem('interviewiq_candidates')
+    const loaded: Candidate[] = raw ? JSON.parse(raw) : PLACEHOLDER_CANDIDATES
+    setCandidates(loaded)
+
+    const job = localStorage.getItem('interviewiq_job')
+    if (job) setJobTitle(JSON.parse(job).jobTitle)
+
+    const notesMap: Record<string, string> = {}
+    const interviewMap: Record<string, Message[]> = {}
+    for (const c of loaded) {
+      const n = localStorage.getItem(`interviewiq_notes_${c.id}`)
+      if (n) notesMap[c.id] = n
+      const m = localStorage.getItem(`interviewiq_messages_${c.id}`)
+      if (m) interviewMap[c.id] = JSON.parse(m)
+    }
+    setNotes(notesMap)
+    setInterviews(interviewMap)
+  }, [])
 
   async function handleGetFeedback() {
     if (!selected) return
     setLoading(true)
     try {
-      await fetch('/api/generate-feedback', {
+      const res = await fetch('/api/generate-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: 'local', hiringDecision: selected, reasoning }),
+        body: JSON.stringify({
+          candidates,
+          interviews,
+          notes,
+          jobTitle,
+          hiringDecision: selected,
+          reasoning,
+        }),
       })
+      const data = await res.json()
+      if (data.feedback) {
+        localStorage.setItem('interviewiq_feedback', JSON.stringify(data.feedback))
+      }
       router.push('/feedback')
     } finally {
       setLoading(false)
@@ -55,11 +83,11 @@ export default function DecisionPage() {
       </div>
 
       <RadioGroup value={selected} onValueChange={setSelected} className="space-y-4">
-        {PLACEHOLDER_CANDIDATES.map((candidate, i) => (
+        {candidates.map((candidate, i) => (
           <div key={candidate.id} className="relative">
             <RadioGroupItem value={candidate.id} id={candidate.id} className="peer sr-only" />
             <Label htmlFor={candidate.id} className="cursor-pointer block">
-              <Card className={`border-slate-200 shadow-sm transition-all peer-checked:border-indigo-500 ${selected === candidate.id ? 'border-indigo-500 ring-1 ring-indigo-500' : ''}`}>
+              <Card className={`border-slate-200 shadow-sm transition-all ${selected === candidate.id ? 'border-indigo-500 ring-1 ring-indigo-500' : ''}`}>
                 <CardContent className="py-4 px-5 flex items-start gap-4">
                   <Avatar className={`h-10 w-10 shrink-0 ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
                     <AvatarFallback className={`text-sm font-semibold ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
@@ -72,7 +100,7 @@ export default function DecisionPage() {
                       <p className="text-xs text-slate-400">{candidate.role}</p>
                     </div>
                     <p className="text-sm text-slate-500 mt-1 line-clamp-2">
-                      {PLACEHOLDER_NOTES[candidate.id] ?? 'No notes recorded.'}
+                      {notes[candidate.id] ?? 'No notes recorded.'}
                     </p>
                   </div>
                 </CardContent>

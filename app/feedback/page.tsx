@@ -1,3 +1,6 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -5,10 +8,29 @@ import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { CheckCircle2, AlertCircle, Quote } from 'lucide-react'
 import { PLACEHOLDER_FEEDBACK, PLACEHOLDER_CANDIDATES } from '@/lib/data'
+import { FeedbackReport, Candidate } from '@/types'
 
 export default function FeedbackPage() {
-  const report = PLACEHOLDER_FEEDBACK
-  const correctCandidate = PLACEHOLDER_CANDIDATES.find((c) => c.id === report.correctHire)
+  const [report, setReport] = useState<FeedbackReport | null>(null)
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+
+  useEffect(() => {
+    const rawFeedback = localStorage.getItem('interviewiq_feedback')
+    setReport(rawFeedback ? JSON.parse(rawFeedback) : PLACEHOLDER_FEEDBACK)
+
+    const rawCandidates = localStorage.getItem('interviewiq_candidates')
+    setCandidates(rawCandidates ? JSON.parse(rawCandidates) : PLACEHOLDER_CANDIDATES)
+  }, [])
+
+  if (!report) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-10">
+        <div className="h-96 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
+      </div>
+    )
+  }
+
+  const correctCandidate = candidates.find((c) => c.id === report.correctHire)
   const scoreColor =
     report.overallScore >= 80
       ? 'text-emerald-600'
@@ -49,9 +71,9 @@ export default function FeedbackPage() {
               <p className={`font-semibold text-sm ${report.userPickedCorrectly ? 'text-emerald-800' : 'text-amber-800'}`}>
                 {report.userPickedCorrectly ? 'You picked the right candidate!' : 'The strongest candidate was actually…'}
               </p>
-              {!report.userPickedCorrectly && (
+              {!report.userPickedCorrectly && correctCandidate && (
                 <p className="text-sm text-amber-700 mt-0.5">
-                  <strong>{correctCandidate?.name}</strong> — {correctCandidate?.summary}
+                  <strong>{correctCandidate.name}</strong> — {correctCandidate.summary}
                 </p>
               )}
             </div>
@@ -94,23 +116,25 @@ export default function FeedbackPage() {
       </Card>
 
       {/* Key moments */}
-      <Card className="border-slate-200 shadow-sm mb-8">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700">Key Moments</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0 space-y-5">
-          {report.keyMoments.map((moment, i) => (
-            <div key={i}>
-              <blockquote className="flex gap-2 text-sm text-slate-600 italic">
-                <Quote className="h-4 w-4 text-indigo-300 shrink-0 mt-0.5" />
-                {moment.quote}
-              </blockquote>
-              <p className="text-xs text-slate-400 mt-1.5 pl-6">{moment.commentary}</p>
-              {i < report.keyMoments.length - 1 && <Separator className="mt-4" />}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      {report.keyMoments.length > 0 && (
+        <Card className="border-slate-200 shadow-sm mb-8">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold text-slate-700">Key Moments</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-5">
+            {report.keyMoments.map((moment, i) => (
+              <div key={i}>
+                <blockquote className="flex gap-2 text-sm text-slate-600 italic">
+                  <Quote className="h-4 w-4 text-indigo-300 shrink-0 mt-0.5" />
+                  {moment.quote}
+                </blockquote>
+                <p className="text-xs text-slate-400 mt-1.5 pl-6">{moment.commentary}</p>
+                {i < report.keyMoments.length - 1 && <Separator className="mt-4" />}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex justify-center">
         <Button asChild variant="outline" className="border-slate-200 text-slate-700 hover:bg-slate-50">
