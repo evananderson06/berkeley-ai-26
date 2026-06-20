@@ -1,14 +1,33 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ArrowLeft } from 'lucide-react'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
+import { Candidate } from '@/types'
 
-export default function ResumePage({ params }: { params: { id: string } }) {
-  const candidate = PLACEHOLDER_CANDIDATES.find((c) => c.id === params.id)
-  if (!candidate) notFound()
+export default function ResumePage() {
+  const params = useParams()
+  const id = params.id as string
+  const [candidate, setCandidate] = useState<Candidate | null>(null)
+
+  useEffect(() => {
+    const raw = localStorage.getItem('interviewiq_candidates')
+    const candidates: Candidate[] = raw ? JSON.parse(raw) : PLACEHOLDER_CANDIDATES
+    setCandidate(candidates.find((c) => c.id === id) ?? null)
+  }, [id])
+
+  if (!candidate) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-10">
+        <div className="h-96 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
+      </div>
+    )
+  }
 
   const { resume, name, role, yearsExperience } = candidate
 
@@ -97,7 +116,7 @@ export default function ResumePage({ params }: { params: { id: string } }) {
 
       <div className="mt-6 flex justify-end">
         <Button asChild className="bg-indigo-600 hover:bg-indigo-700 text-white">
-          <Link href={`/candidates/${params.id}/interview`}>Start Interview →</Link>
+          <Link href={`/candidates/${id}/interview`}>Start Interview →</Link>
         </Button>
       </div>
     </div>

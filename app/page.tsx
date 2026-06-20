@@ -30,6 +30,9 @@ export default function HomePage() {
         body: JSON.stringify({ jobTitle, jobDescription }),
       })
       if (!res.ok) throw new Error('Failed to generate candidates')
+      const data = await res.json()
+      localStorage.setItem('interviewiq_candidates', JSON.stringify(data.candidates))
+      localStorage.setItem('interviewiq_job', JSON.stringify({ jobTitle, jobDescription }))
       router.push('/candidates')
     } catch {
       setError('Something went wrong. Please try again.')
