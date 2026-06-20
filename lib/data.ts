@@ -10,6 +10,7 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
     summary: 'Full-stack engineer with deep expertise in distributed systems and a strong track record of leading platform migrations at scale.',
     skills: ['TypeScript', 'Go', 'Kubernetes', 'PostgreSQL', 'System Design', 'Team Leadership'],
     qualityTier: 'strong',
+    resumeStyle: 'executive',
     redFlags: [],
     greenFlags: [
       'Led migration of monolith to microservices serving 50M users',
@@ -66,6 +67,7 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
     summary: 'Solid mid-level engineer with React/Node.js experience. Steady contributor, prefers well-scoped tasks over ambiguous greenfield work.',
     skills: ['React', 'Node.js', 'JavaScript', 'MySQL', 'REST APIs'],
     qualityTier: 'adequate',
+    resumeStyle: 'modern',
     redFlags: ['Struggles with ambiguity', 'Limited experience beyond CRUD applications'],
     greenFlags: ['Reliable delivery', 'Good team collaborator'],
     resume: {
@@ -107,6 +109,7 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
     summary: 'Enthusiastic engineer two years out of bootcamp with solid fundamentals and a fast learning curve. Still building depth on complex backend topics.',
     skills: ['React', 'Python', 'Django', 'PostgreSQL', 'Docker'],
     qualityTier: 'adequate',
+    resumeStyle: 'classic',
     redFlags: ['Limited system design experience', 'Gaps in CS fundamentals under pressure'],
     greenFlags: ['Fast learner', 'High initiative — ships features independently'],
     resume: {
@@ -148,6 +151,7 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
     summary: 'Impressive résumé at name-brand companies with grand claims. Deep-dive questions reveal surface-level ownership of headline achievements.',
     skills: ['Java', 'Scala', 'Spark', 'AWS', 'Microservices', 'Agile'],
     qualityTier: 'poor',
+    resumeStyle: 'flashy',
     redFlags: [
       'Cannot explain technical decisions he claims to have made',
       'Dismissive when challenged — becomes defensive',
@@ -204,6 +208,7 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
     summary: 'Recent graduate with 6 months professional experience. Confident but overestimates current capability. Needs significant ramp time.',
     skills: ['Python', 'JavaScript', 'HTML', 'CSS', 'Git'],
     qualityTier: 'poor',
+    resumeStyle: 'garish',
     redFlags: [
       'Only 6 months professional experience',
       'Portfolio projects are tutorial clones',
@@ -211,7 +216,7 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
     ],
     greenFlags: ['Enthusiastic', 'Coachable demeanor'],
     resume: {
-      summary: 'Passionate developer and recent CS graduate eager to contribute to a fast-moving team. Strong foundations in Python and JavaScript with experience shipping real projects.',
+      summary: 'Passionate developer and recent CS gratuate eager to contribute in a fast-moving team. Strong foundamentals in Python and JavaScript with hands-on experience shipping real world projects.',
       experience: [
         {
           company: 'TechStart Inc.',
@@ -219,8 +224,8 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
           startDate: 'Jan 2024',
           endDate: 'Present',
           bullets: [
-            'Fixed bugs and wrote unit tests for internal admin tools',
-            'Participated in bi-weekly sprint planning and retrospectives',
+            'Fixd bugs and writed unit tests for internal admin tools',
+            'Participated in bi-weekly sprint planning and retrospectives, also assist with documentation',
           ],
         },
         {
@@ -229,8 +234,8 @@ export const PLACEHOLDER_CANDIDATES: Candidate[] = [
           startDate: '2022',
           endDate: '2023',
           bullets: [
-            'Built a to-do list app in React (deployed on Vercel)',
-            'Created a weather dashboard using OpenWeatherMap API',
+            'Built a to-do list app in React (deploy on vercel)',
+            'Created weather dashbord using OpenWeatherMap API',
           ],
         },
       ],
