@@ -36,6 +36,11 @@ const CANDIDATE_TOOL = {
               items: { type: 'string' },
               description: 'Genuine strengths this candidate has',
             },
+            resumeStyle: {
+              type: 'string',
+              enum: ['classic', 'modern', 'executive', 'flashy', 'garish', 'chaotic'],
+              description: 'Visual presentation style for the resume. classic=clean minimal; modern=two-column dark sidebar; executive=dark navy header formal serif; flashy=gradient emoji over-the-top; garish=dated Word-doc style with blue header and burgundy section headers; chaotic=inconsistent sizes and alignment.',
+            },
             resume: {
               type: 'object',
               properties: {
@@ -72,7 +77,7 @@ const CANDIDATE_TOOL = {
               required: ['summary', 'experience', 'education', 'skills'],
             },
           },
-          required: ['name', 'initials', 'role', 'yearsExperience', 'summary', 'skills', 'qualityTier', 'redFlags', 'greenFlags', 'resume'],
+          required: ['name', 'initials', 'role', 'yearsExperience', 'summary', 'skills', 'qualityTier', 'redFlags', 'greenFlags', 'resume', 'resumeStyle'],
         },
         minItems: 5,
         maxItems: 5,
@@ -116,7 +121,20 @@ The 5 candidates must follow this exact distribution:
 3. ONE deceptively impressive candidate — polished resume at name-brand companies, but hiding red flags (e.g. short tenures, vague ownership of claimed achievements, defensive when pressed on details). Their greenFlags should look great on paper. qualityTier: "poor"
 4. ONE clearly underqualified candidate — genuine enthusiasm but not ready for this level. qualityTier: "poor"
 
-Tailor every candidate specifically to this job and industry. Use realistic metrics and timelines. The deceptive candidate's resume should look genuinely impressive — the red flags are only discoverable through careful interview questions.`,
+Tailor every candidate specifically to this job and industry. Use realistic metrics and timelines. The deceptive candidate's resume should look genuinely impressive — the red flags are only discoverable through careful interview questions.
+
+RESUME STYLE ASSIGNMENT — assign one resumeStyle per candidate:
+- "executive": Dark navy header, formal serif body, gold accents. Use for the strong candidate — polished and authoritative.
+- "modern": Two-column layout with dark sidebar. Use for one of the adequate candidates — clean and contemporary.
+- "classic": Clean minimal black-and-white. Use for the other adequate candidate — straightforward and safe.
+- "flashy": Purple-pink gradient header, emoji section headers (✨ ⚡ 🏆 🎓), each section in a different coloured rounded box. Use for the deceptive poor candidate — looks impressive and try-hard at first glance.
+- "garish": Dated Word-document style — blue-tinted header, burgundy ALL CAPS section headers with double border lines, a generic Objective paragraph, skills in a 3-column checkmark table, alternating gray row shading on experience. Looks like a 2010 Word résumé template. Use for the clearly underqualified poor candidate.
+- "chaotic": Huge name, inconsistent font sizes, alternating left/right alignment per job. Assign to the clearly underqualified candidate only as an alternative to garish — pick whichever fits the candidate's personality better.
+
+GRAMMAR & SPELLING ERRORS in resume text:
+- For the clearly underqualified poor candidate (garish or chaotic style), introduce 3–5 realistic errors spread across their resume summary and bullet points. Use: typos ("responsable", "managment", "expirience", "gratuate"), grammar mistakes ("responsible of" not "for", "assist with" not "assisted", "I have contribute"), missing punctuation, random lowercase where capitals belong, run-on sentences. Errors should feel like a rushed first draft — not gibberish, just noticeably unpolished.
+- The deceptive poor candidate must have flawless, impressive-sounding prose (their problems only surface in interviews).
+- Strong and adequate candidates must have polished, professional resume text with no errors.`,
         },
       ],
     })
