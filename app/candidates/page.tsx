@@ -1,9 +1,13 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
+import { Candidate } from '@/types'
 
 const AVATAR_COLORS = [
   'bg-indigo-100 text-indigo-700',
@@ -14,15 +18,28 @@ const AVATAR_COLORS = [
 ]
 
 export default function CandidatesPage() {
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [jobTitle, setJobTitle] = useState<string>('')
+
+  useEffect(() => {
+    const raw = localStorage.getItem('interviewiq_candidates')
+    setCandidates(raw ? JSON.parse(raw) : PLACEHOLDER_CANDIDATES)
+
+    const job = localStorage.getItem('interviewiq_job')
+    if (job) setJobTitle(JSON.parse(job).jobTitle)
+  }, [])
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Candidate Pool</h1>
-        <p className="mt-1 text-slate-500 text-sm">Review resumes and conduct interviews. Take notes as you go.</p>
+        <p className="mt-1 text-slate-500 text-sm">
+          {jobTitle ? `Candidates for: ${jobTitle}` : 'Review resumes and conduct interviews. Take notes as you go.'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {PLACEHOLDER_CANDIDATES.map((candidate, i) => (
+        {candidates.map((candidate, i) => (
           <Card key={candidate.id} className="border-slate-200 shadow-sm flex flex-col">
             <CardContent className="pt-6 flex-1">
               <div className="flex items-start gap-4">
