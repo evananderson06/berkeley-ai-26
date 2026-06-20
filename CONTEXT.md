@@ -95,6 +95,8 @@ The team has wired a **real, text-based MVP of the full loop** — three live Cl
 
 ## 3. Architecture — The Manual Voice Pipeline (Node WS server)
 
+> 🔀 **The `voice-interview` branch does NOT use this. It uses a simpler browser-direct approach — see §17.** §3 stays the design of record for a future server-orchestrated / deployed version.
+
 > **All §3 sub-sections are preserved from the reviewed plan; only the runtime (Node, `@deepgram/sdk`, `AbortController`) and the agent inputs (resume + truthfulness instead of a static persona) changed.**
 
 ### 3.1 Data flow
@@ -302,7 +304,7 @@ Input: job title/description + company context + `NUM_CANDIDATES`. **Generate th
 
 System prompt (per-candidate): *"You generate ONE realistic job candidate for the role below. You are assigned truthfulness tier = {tier}. Produce (a) a polished RESUME a real applicant would submit, and (b) a private TRUTHFULNESS profile for the interviewer's simulator. honest → resume matches reality, can answer deeply. embellished → resume inflates scope/ownership; they can describe the work but crack under architectural/decision depth; name exactly where. mixed → some sections solid, some shaky; specify which. Also score paper-fit to the job (pre_interview_score 0–100). The resume must NOT hint at the truthfulness tier."*
 
-### 7.2 Candidate (Step 3 — voice, streaming, on the voice server)   ✅ *text version built (`/api/interview`); voice + truthfulness inputs pending*
+### 7.2 Candidate (Step 3 — voice, streaming, on the voice server)   ✅ *text + voice built (voice = browser raw-WS on the `voice-interview` branch, §17); persona still uses the existing qualityTier/flags — the truthfulness-profile split is pending*
 Settings: thinking off, effort low, `maxTokens≈384`, stream → Aura. System prompt = **resume (identity) + truthfulness profile (behavior)**:
 
 ```
@@ -486,6 +488,93 @@ NEXT_PUBLIC_API_URL=                # usually same-origin (Vercel)
 - **Mid-call error handling:** LLM 5xx/refusal → SDK retry then a canned fallback line + `candidate_speaking_end` (never dead air); Deepgram socket close → one reconnect then keep the session alive so the interview still ends + summarizes; browser disconnect → session persists in Redis.
 - **Backup video — mandatory.** Record a clean full run (Overseer → embellished interview → verdict disagreeing) the moment the build is first stable (~hour 21).
 - **Pre-judging checklist:** both local processes up (`next dev` + voice server) + a warm-up run done today; Deepgram + Anthropic + OpenAI quota checked; mic permission granted in the exact browser/tab; backup video queued; **model set to Best/Claude**; rehearsed cut-to-video + fast restart.
+
+---
+
+## 17. Voice Interview — AS BUILT (`voice-interview` branch)
+
+> **Status: implemented, typecheck-clean, runtime-verified** (local, uncommitted). It diverged from the original plan in two ways the review forced: (1) **raw browser WebSockets** for STT/TTS, not the `@deepgram/sdk` high-level sockets (the v5 SDK is browser-hostile — see §17.2); (2) **`Sec-WebSocket-Protocol` subprotocol auth with the `bearer` scheme**, not an HTTP header. This section is the as-built record.
+
+**What it does (met):** the AI candidate speaks its replies and **stops the moment the interviewer's voice crosses a tunable volume threshold**, then listens and replies again. **Start / Pause / Resume** without losing the chat. **End Interview** marks the candidate completed and attaches a jot-note summary. Everything downstream is unchanged — the transcript stays `Message[]` in localStorage and `/api/interview` + `/api/generate-feedback` are untouched.
+
+**Decisions (locked):** browser-direct Deepgram (no Node WS server, no deploy — supersedes §3 for this branch); the LLM stays in the existing **`/api/interview`** route; barge-in is a **client-side volume threshold**; designed for **open speakers** (echo cancellation + sustained-threshold debounce) so it also works with headphones (cleanest).
+
+### 17.1 Flow
+
+```
+ ┌─ Start interview (user gesture → resume AudioContext, mint token) ─┐
+ │                                                                    │
+ │  mic (always open) ──▶ Deepgram live STT (browser WS, accessToken) │
+ │        │                     │ interim → live captions             │
+ │        │                     │ speech_final / UtteranceEnd = turn end
+ │        │                     ▼                                     │
+ │        │            POST /api/interview {candidate, messages, newMessage}  ◀── UNCHANGED
+ │        │                     │ reply text                          │
+ │        │                     ▼                                     │
+ │        │            Aura streaming TTS (browser WS) ──▶ play (24k PCM queue)
+ │        │                     ▲                                     │
+ │        └── AnalyserNode RMS ──┘  while speaking: RMS > threshold for N ms
+ │                                  → STOP playback + abort → back to listening
+ └────────────────────────────────────────────────────────────────────┘
+   Every finalized user turn + every reply → Message[] in localStorage  → feedback unchanged
+```
+
+### 17.2 Auth + why raw WebSockets (the key learning)
+**Token route** `app/api/deepgram-token/route.ts` (server): `await dg.auth.v1.tokens.grant({ ttl_seconds: 30 })` → `{ access_token, expires_in }` via `new DeepgramClient({ apiKey: DEEPGRAM_API_KEY })`. The long-lived key never reaches the browser; a fresh 30s token is minted on every start/resume (it's only needed to open the sockets).
+
+**Browser auth is via subprotocol, not a header:** STT/TTS connect with `new WebSocket(url, [DG_AUTH_SCHEME, accessToken])` (the `Sec-WebSocket-Protocol` pair). `DG_AUTH_SCHEME` lives in `lib/voice/config.ts` and is **`'bearer'`** — runtime-confirmed: a granted token is a JWT and needs `bearer` (Deepgram's docs only show `token`, which is for raw API keys). That one constant is the flip if auth ever fails.
+
+**Why raw `WebSocket` and not the `@deepgram/sdk` v5 sockets** (3 browser blockers, verified in the SDK source during review): (1) the SDK sends auth as an HTTP `Authorization` header, which browsers silently drop on `new WebSocket`; (2) it `JSON.parse`s *every* incoming frame, so Aura's binary PCM throws inside the SDK before reaching us; (3) `client.*.connect()` already opens the socket, so an extra `socket.connect()` re-registers handlers → every event fires twice. STT/TTS therefore use raw `WebSocket`; the SDK is used only server-side in the token route.
+
+### 17.3 State machine + Start / Pause / Resume (`lib/voice/useVoiceInterview.ts`)
+`idle → connecting → listening → thinking → speaking → listening` (loop), plus **`paused`**. Mic + `AnalyserNode` run continuously while live.
+- **Start** (empty transcript): mint token → `AudioContext` (resumed synchronously inside the click, before any await, for autoplay) → mic + raw STT + raw TTS → speak the greeting.
+- **Pause:** tears down mic/STT/TTS/AudioContext but **keeps the transcript**; status → `paused` (the button reads "Resume interview").
+- **Resume** (and re-entering with an existing transcript): `start()` skips the greeting when messages exist and just re-listens — full history is re-sent to `/api/interview`, so context is preserved. **No reset, ever.** The transcript is also loaded from localStorage on mount, so navigating away/back never wipes it.
+- **Turn end:** Deepgram `speech_final`/`UtteranceEnd` while `listening` → commit the user turn → `thinking`.
+- **Safeguards:** a session counter invalidates in-flight async across start/pause/stop (no setState-after-teardown); a 15s watchdog + `onError`→listening prevents a stuck `speaking` state (empty/failed reply); the `/api/interview` fetch has a 30s timeout.
+
+### 17.4 Volume barge-in + echo handling
+- `getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })`.
+- `AnalyserNode` (`getFloatTimeDomainData` → RMS) sampled per animation frame (the UI meter is throttled to ~10 fps).
+- **Trigger = RMS above `THRESHOLD` for `DEBOUNCE_MS` continuously** while `speaking` → `tts.stop()` → `listening`; the interrupting speech is captured by the still-live STT and becomes the next turn.
+- **Off-state speech is discarded:** STT finals accumulate **only while `listening`**, and pending text is cleared on every entry to `listening` — so echo / talk-over during `speaking`/`thinking` can't bleed into the next turn.
+- Open speakers: echo cancellation + a threshold above the echo floor + the debounce. **Headphones eliminate it.** Knobs in `lib/voice/config.ts` (`THRESHOLD`, `DEBOUNCE_MS`, `PLAYBACK_LEAD_S`, `DG_AUTH_SCHEME`) + a live threshold slider (min clamped to 0.01 so `0`/always-on can't be selected).
+
+### 17.5 STT — raw browser WebSocket (`lib/voice/stt.ts`)
+`new WebSocket('wss://api.deepgram.com/v1/listen?' + params, [DG_AUTH_SCHEME, token])` with `model=nova-3, interim_results=true, smart_format=true, punctuate=true, endpointing=300, utterance_end_ms=1000, vad_events=true` (booleans serialized as the string `'true'`). Mic audio is sent as `MediaRecorder` webm/opus chunks (~250 ms) via `ws.send(blob)` — no `encoding`/`sample_rate` (Deepgram auto-detects the container). Incoming JSON frames: `Results` (interim/final via `channel.alternatives[0].transcript`), `UtteranceEnd`/`speech_final` (turn end), `SpeechStarted`.
+
+### 17.6 TTS — raw browser WebSocket (`lib/voice/tts.ts`)
+`new WebSocket('wss://api.deepgram.com/v1/speak?' + params, [DG_AUTH_SCHEME, token])` with `model=aura-2-thalia-en, encoding=linear16, sample_rate=24000`, `binaryType='arraybuffer'`. Per reply: `send({type:'Speak', text})` then `send({type:'Flush'})`. Binary frames = linear16 PCM → Int16→Float32 → 24 kHz `AudioBuffer`s scheduled gaplessly (`nextStart` + `PLAYBACK_LEAD_S` jitter headroom). **End-of-reply is gated on the `Flushed` control frame AND the queue draining**, so streaming gaps don't flip the state machine mid-reply. `stop()` bumps a generation counter, sends `{type:'Clear'}`, and stops queued sources (barge-in).
+
+### 17.7 LLM — unchanged
+`POST /api/interview {candidate, messages, newMessage}` → `{reply}`, exactly as today (§0.2). The persona/`qualityTier` system prompt stays server-side — the browser never sees it. *(Optional later: stream `/api/interview` + feed Aura per-token for lower latency; not needed for v1.)*
+
+### 17.8 Transcript & feedback compatibility (hard requirement — verified)
+Each user turn → `Message{ role:'user', content, timestamp }`; each reply → `Message{ role:'assistant', ... }`; persisted to `localStorage interviewiq_messages_{id}` **exactly as the text interview**. `/api/interview` and `/api/generate-feedback` are untouched. **localStorage keys (per candidate):** `interviewiq_messages_{id}`, `interviewiq_notes_{id}`, `interviewiq_completed_{id}`, `interviewiq_summary_{id}`.
+
+### 17.9 Files (as built — local on this branch, no commit)
+- 🆕 `app/api/deepgram-token/route.ts` — mints the 30s token (server SDK).
+- 🆕 `app/api/interview-summary/route.ts` — jot-note summary (`claude-sonnet-4-6`).
+- 🆕 `lib/voice/config.ts` — `THRESHOLD`, `DEBOUNCE_MS`, `PLAYBACK_LEAD_S`, models, `DG_AUTH_SCHEME='bearer'`.
+- 🆕 `lib/voice/mic.ts` — getUserMedia + AnalyserNode RMS meter + MediaRecorder.
+- 🆕 `lib/voice/stt.ts` — raw-WS Deepgram live STT.
+- 🆕 `lib/voice/tts.ts` — raw-WS Aura streaming playback + `stop()`.
+- 🆕 `lib/voice/useVoiceInterview.ts` — orchestration hook / state machine (Start/Pause/Resume).
+- 🆕 `components/summary-notes.tsx` — renders jot-note summaries as bullets.
+- ✏️ `app/candidates/[id]/interview/page.tsx` — voice UI (Start/Pause/Resume, status, live caption, meter + slider) + End Interview action.
+- ✏️ `app/candidates/page.tsx` · `app/candidates/[id]/resume/page.tsx` · `app/decision/page.tsx` — completed badge + attached summary; Interview button gated.
+- env: `DEEPGRAM_API_KEY` (server only). No new npm deps — STT/TTS use the native `WebSocket`; `@deepgram/sdk` is used only in the token route.
+
+### 17.10 End Interview → completed + jot-note summary
+On **End Interview** (when ≥1 user turn occurred): tear down voice → set `interviewiq_completed_{id}='true'` → `POST /api/interview-summary` ({candidate, messages} → `claude-sonnet-4-6` → **3–6 jot-note bullets**) → store at `interviewiq_summary_{id}` → navigate to `/candidates`. The completed flag is set *before* the summary call, so the candidate reads as completed even if summary generation fails. The summary prompt is lightly informed by the hidden `qualityTier`/`redFlags` but instructed **not** to reveal them (that's the eventual verdict's job).
+- **Candidates list, resume page, decision page:** completed candidates show an "Interviewed" badge + the summary, and the **Interview button is replaced with "Completed"** (also gated on the resume page) — no re-interview option. Summaries render as bullets via the shared `components/summary-notes.tsx`.
+
+### 17.11 Verification & known items
+- **`npx tsc --noEmit` clean** after every change on this branch.
+- **5-reviewer adversarial pass** caught the 3 SDK browser blockers (§17.2) + logic bugs (echo contamination, stuck-`speaking`, playback overlap) — all fixed.
+- **Runtime-confirmed:** `DG_AUTH_SCHEME='bearer'` is required (user-verified); barge-in works on the default threshold.
+- **Watch on further testing:** barge-in feel on open speakers (tune `THRESHOLD`/`DEBOUNCE_MS`, or use headphones); a completed candidate cannot be re-interviewed by design (a re-interview escape hatch is a one-line change if wanted).
 
 ---
 

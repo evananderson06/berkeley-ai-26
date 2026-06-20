@@ -10,6 +10,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
 import { Candidate, Message } from '@/types'
+import { SummaryNotes } from '@/components/summary-notes'
 
 const AVATAR_COLORS = [
   'bg-indigo-100 text-indigo-700',
@@ -24,6 +25,7 @@ export default function DecisionPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [interviews, setInterviews] = useState<Record<string, Message[]>>({})
+  const [summaries, setSummaries] = useState<Record<string, string>>({})
   const [jobTitle, setJobTitle] = useState('')
   const [selected, setSelected] = useState('')
   const [reasoning, setReasoning] = useState('')
@@ -39,14 +41,18 @@ export default function DecisionPage() {
 
     const notesMap: Record<string, string> = {}
     const interviewMap: Record<string, Message[]> = {}
+    const summaryMap: Record<string, string> = {}
     for (const c of loaded) {
       const n = localStorage.getItem(`interviewiq_notes_${c.id}`)
       if (n) notesMap[c.id] = n
       const m = localStorage.getItem(`interviewiq_messages_${c.id}`)
       if (m) interviewMap[c.id] = JSON.parse(m)
+      const s = localStorage.getItem(`interviewiq_summary_${c.id}`)
+      if (s) summaryMap[c.id] = s
     }
     setNotes(notesMap)
     setInterviews(interviewMap)
+    setSummaries(summaryMap)
   }, [])
 
   async function handleGetFeedback() {
@@ -99,9 +105,14 @@ export default function DecisionPage() {
                       <p className="font-semibold text-slate-900 text-sm">{candidate.name}</p>
                       <p className="text-xs text-slate-400">{candidate.role}</p>
                     </div>
-                    <p className="text-sm text-slate-500 mt-1 line-clamp-2">
-                      {notes[candidate.id] ?? 'No notes recorded.'}
-                    </p>
+                    {summaries[candidate.id] ? (
+                      <SummaryNotes summary={summaries[candidate.id]} className="mt-1.5" />
+                    ) : (
+                      <p className="text-sm text-slate-400 mt-1 italic">Not interviewed yet.</p>
+                    )}
+                    {notes[candidate.id] && (
+                      <p className="text-xs text-slate-400 mt-2">Your notes: {notes[candidate.id]}</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
