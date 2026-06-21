@@ -10,7 +10,7 @@ interface GenerateCandidatesRequest {
 
 const CANDIDATE_TOOL = {
   name: 'create_candidates',
-  description: 'Create an array of 5 job candidates for the interview simulation',
+  description: 'Create an array of 3 job candidates for the interview simulation',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -79,8 +79,8 @@ const CANDIDATE_TOOL = {
           },
           required: ['name', 'initials', 'role', 'yearsExperience', 'summary', 'skills', 'qualityTier', 'redFlags', 'greenFlags', 'resume', 'resumeStyle'],
         },
-        minItems: 5,
-        maxItems: 5,
+        minItems: 3,
+        maxItems: 3,
       },
     },
     required: ['candidates'],
@@ -90,11 +90,9 @@ const CANDIDATE_TOOL = {
 // Each entry fires when we detect the Nth "yearsExperience" token in the streaming JSON,
 // meaning Claude has started writing that candidate's core fields.
 const CANDIDATE_MILESTONES = [
-  { message: 'Creating candidate personas…', progress: 15 },
-  { message: 'Drafting résumés…', progress: 30 },
-  { message: 'Building career histories…', progress: 48 },
-  { message: 'Hiding a few red flags…', progress: 65 },
-  { message: 'Finishing up…', progress: 80 },
+  { message: 'Creating candidate personas…', progress: 20 },
+  { message: 'Drafting résumés…', progress: 45 },
+  { message: 'Hiding a few red flags…', progress: 70 },
 ]
 
 export async function POST(req: NextRequest) {
@@ -131,24 +129,21 @@ Use diverse names. Make the candidates feel like real people, not archetypes.`,
           messages: [
             {
               role: 'user',
-              content: `Generate 5 candidates for this role:
+              content: `Generate 3 candidates for this role:
 
 Job Title: ${body.jobTitle}
 Job Description:
 ${body.jobDescription}
 
-The 5 candidates must follow this exact distribution:
+The 3 candidates must follow this exact distribution:
 1. ONE clearly excellent candidate — deep relevant experience, specific achievements, matches the role well. qualityTier: "strong"
-2. TWO adequate candidates — competent but unremarkable. One is slightly stronger. qualityTier: "adequate"
-3. ONE deceptively impressive candidate — polished resume at name-brand companies, but hiding red flags (e.g. short tenures, vague ownership of claimed achievements, defensive when pressed on details). Their greenFlags should look great on paper. qualityTier: "poor"
-4. ONE clearly underqualified candidate — genuine enthusiasm but not ready for this level. qualityTier: "poor"
+2. ONE deceptively impressive candidate — polished resume at name-brand companies, but hiding red flags (e.g. short tenures, vague ownership of claimed achievements, defensive when pressed on details). Their greenFlags should look great on paper. qualityTier: "poor"
+3. ONE clearly underqualified candidate — genuine enthusiasm but not ready for this level. qualityTier: "poor"
 
 Tailor every candidate specifically to this job and industry. Use realistic metrics and timelines. The deceptive candidate's resume should look genuinely impressive — the red flags are only discoverable through careful interview questions.
 
 RESUME STYLE ASSIGNMENT — assign one resumeStyle per candidate:
 - "executive": Dark navy header, formal serif body, gold accents. Use for the strong candidate — polished and authoritative.
-- "modern": Two-column layout with dark sidebar. Use for one of the adequate candidates — clean and contemporary.
-- "classic": Clean minimal black-and-white. Use for the other adequate candidate — straightforward and safe.
 - "flashy": Purple-pink gradient header, emoji section headers (✨ ⚡ 🏆 🎓), each section in a different coloured rounded box. Use for the deceptive poor candidate — looks impressive and try-hard at first glance.
 - "garish": Dated Word-document style — blue-tinted header, burgundy ALL CAPS section headers with double border lines, a generic Objective paragraph, skills in a 3-column checkmark table, alternating gray row shading on experience. Looks like a 2010 Word résumé template. Use for the clearly underqualified poor candidate.
 - "chaotic": Huge name, inconsistent font sizes, alternating left/right alignment per job. Assign to the clearly underqualified candidate only as an alternative to garish.

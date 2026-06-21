@@ -42,9 +42,27 @@ export function CodeEditor({ value, language }: CodeEditorProps) {
         padding: { top: 12, bottom: 12 },
       }}
       onMount={(editor) => {
-        // Follow the "typing" as it streams in — scroll to wherever the edit landed
-        // (mid-file for an in-place patch, end of file for an append).
+        // Auto-follow the "typing" as it streams in, but only while the viewer is
+        // parked at the bottom. The moment they scroll up to read earlier code we
+        // stop yanking the viewport back, so manual scrolling actually sticks; once
+        // they scroll back down, following resumes.
+        let following = true
+
+        const isAtBottom = () => {
+          const remaining =
+            editor.getScrollHeight() - editor.getScrollTop() - editor.getLayoutInfo().height
+          // A couple of lines of slack so we count "close enough" as at-bottom.
+          return remaining <= 40
+        }
+
+        editor.onDidScrollChange(() => {
+          following = isAtBottom()
+        })
+
+        // Follow the "typing" — scroll to wherever the edit landed (mid-file for an
+        // in-place patch, end of file for an append) — unless the viewer scrolled away.
         editor.onDidChangeModelContent((e) => {
+          if (!following) return
           const model = editor.getModel()
           if (!model) return
           const line = e.changes.length

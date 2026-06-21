@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 import { Newsreader } from 'next/font/google'
 import './globals.css'
-import { Nav } from '@/components/nav'
 
 // Type roles: Geist Sans = UI/body, Geist Mono = data/transcripts/code chrome/timecodes,
 // Newsreader = display/headlines/verdict.
@@ -35,7 +34,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable}`}>
       <body className="min-h-screen bg-ground font-sans text-ink antialiased">
-        <Nav />
         <main>{children}</main>
       </body>
     </html>
