@@ -107,3 +107,34 @@ export function preferredLanguage(candidate: Candidate): string {
   }
   return 'python'
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Speech disfluency — a per-candidate verbal habit (filler, false starts, stutters)
+// the candidate carries through the whole interview. Seeded from the candidate id so it's
+// STABLE per candidate but varies across them, and DELIBERATELY uncorrelated with quality
+// or fit: the strongest hire might stutter constantly, the weakest not at all.
+export type Disfluency = 'none' | 'mild' | 'moderate' | 'heavy'
+
+function hashUnit(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return ((h >>> 0) % 100000) / 100000
+}
+
+export function speechDisfluency(candidateId: string): Disfluency {
+  const u = hashUnit(candidateId)
+  if (u < 0.3) return 'none'
+  if (u < 0.65) return 'mild'
+  if (u < 0.9) return 'moderate'
+  return 'heavy'
+}
+
+export const DISFLUENCY_INSTRUCTIONS: Record<Disfluency, string> = {
+  none: `You speak cleanly and fluently — essentially no filler words or stumbles.`,
+  mild: `You have the occasional natural disfluency — an "um" or a brief restart here and there, the way most people talk. Keep it light.`,
+  moderate: `You're a noticeably disfluent speaker: frequent filler ("um", "uh", "like", "you know"), some false starts and self-corrections ("I'd— I'd use a hash map"), the odd repeated word. This is just how you talk and has nothing to do with how good your answers are.`,
+  heavy: `You stutter and stumble a lot when you talk: lots of filler ("um", "uh"), frequent false starts and restarts, repeated words and part-words ("the— the the thing is…"), trailing off and regrouping mid-sentence. This is purely a speech habit — you can be completely sharp and still this disfluent, so never let it reduce the substance of what you say.`,
+}
