@@ -20,8 +20,8 @@ import { VOICE, VoiceState, voiceForCandidate } from './config'
 import { createMic, MicController } from './mic'
 import { startStt, SttSession } from './stt'
 import { createTts, TtsController } from './tts'
-import { Action, ActionAssembler } from '@/lib/coding/parser'
-import { ActionQueue, tokenizeCode } from '@/lib/coding/playback'
+import { ActionAssembler } from '@/lib/coding/parser'
+import { ActionQueue, estimateSpeechMs, tokenizeCode } from '@/lib/coding/playback'
 import { deleteSnippet, locate } from '@/lib/coding/edits'
 import {
   BASE_TYPING_DELAY_MS,
@@ -187,7 +187,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   // spoken line that explains it (line-by-line sync). The current editor contents are sent
   // as context so the model can edit them instead of rewriting from scratch.
   const sendToLLM = useCallback(
-    async (userText: string) => {
+    async (userText: string, fallbackStatus: VoiceState = 'idle') => {
       const cand = candidateRef.current
       if (!cand) return
       const mySession = sessionRef.current
@@ -196,11 +196,12 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
 
       const codeContext = codeRef.current
 
-      // Add an empty assistant bubble we reveal line-by-line as each line is spoken.
+      // Add an empty assistant bubble we fill as narration streams in.
       commitMessages([...messagesRef.current, { role: 'assistant', content: '', timestamp: now() }])
       const assistantIdx = messagesRef.current.length - 1
 
       let narration = ''
+      let fedAny = false
 
       const appendNarration = (text: string) => {
         narration += text
@@ -211,9 +212,9 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
         setMessagesState(next)
       }
 
-      // Type `body` between a fixed prefix/suffix over `spanMs` — the *measured* spoken
-      // duration of the line — so code lands in lockstep with the speech (no drift). If
-      // the run is superseded (barge-in / interrupt) it dumps the rest so the line is whole.
+      // Type `body` between a fixed prefix/suffix, pacing it to roughly fill `spanMs`
+      // (the spoken explanation's duration) so code and speech stay in sync. If the
+      // run is superseded (barge-in / interrupt) it dumps the rest so the line is whole.
       const typeBetween = async (prefix: string, body: string, suffix: string, spanMs: number) => {
         const tokens = tokenizeCode(body)
         const per = tokens.length
@@ -231,68 +232,53 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
         }
       }
 
-      // Apply one editor action, animating type/edit over spanMs (0 ⇒ natural pace).
-      const applyCodeAction = async (a: Action, spanMs: number) => {
-        if (a.kind === 'type') {
-          await typeBetween(codeRef.current, a.text, '', spanMs)
-        } else if (a.kind === 'edit') {
-          const m = locate(codeRef.current, a.oldText)
-          let prefix: string
-          let suffix: string
-          if (m) {
-            prefix = codeRef.current.slice(0, m.start)
-            suffix = codeRef.current.slice(m.end)
-          } else {
-            // Snippet not found in the editor — append the new code so the edit isn't lost.
-            const base = codeRef.current
-            prefix = base && !base.endsWith('\n') ? base + '\n' : base
-            suffix = ''
-          }
-          applyCode(prefix + suffix) // remove the old snippet, then type the new in its place
-          await typeBetween(prefix, a.newText, suffix, spanMs)
-        } else if (a.kind === 'delete') {
-          applyCode(deleteSnippet(codeRef.current, a.oldText))
-        } else if (a.kind === 'clear') {
-          applyCode('')
-        }
-      }
-
       const queue = new ActionQueue()
       const assembler = new ActionAssembler()
 
-      // The runner: for each spoken line, FULLY synthesize its audio first (one contiguous
-      // buffer ⇒ no stutter), reveal the text + play the buffer, and type the code that
-      // follows it over the audio's *measured* duration ⇒ speech and code stay locked.
+      // The runner: plays actions in order, overlapping each spoken line with the code
+      // it describes, and not starting the next line until the current speech finishes.
       const runner = (async () => {
-        let la = await queue.next()
-        while (la) {
+        let speechBusyUntil = 0
+        for (;;) {
           if (myRun !== runIdRef.current) return
-          const a = la
+          const a = await queue.next()
+          if (!a) return
+          if (myRun !== runIdRef.current) return
 
           if (a.kind === 'speak') {
-            const tts = ttsRef.current
-            const buf = tts ? await tts.synthesize(a.text) : null
+            const wait = speechBusyUntil - performance.now()
+            if (wait > 0) await sleep(wait)
             if (myRun !== runIdRef.current) return
-            appendNarration(a.text) // reveal the text together with its audio
-            la = await queue.next() // the action right after this line (often its code)
-
-            if (buf && tts) {
-              if (statusRef.current !== 'speaking') setStatus('speaking')
-              const { durationMs, ended } = tts.play(buf)
-              if (la && la.kind !== 'speak') {
-                await Promise.all([applyCodeAction(la, durationMs), ended])
-                la = await queue.next()
-              } else {
-                await ended
-              }
-            } else if (la && la.kind !== 'speak') {
-              await applyCodeAction(la, 0)
-              la = await queue.next()
+            appendNarration(a.text)
+            const clause = a.text.trim()
+            if (clause) {
+              ttsRef.current?.feed(clause)
+              fedAny = true
             }
-          } else {
-            // Editor action with no spoken line in front of it — type at a natural pace.
-            await applyCodeAction(a, 0)
-            la = await queue.next()
+            speechBusyUntil = performance.now() + estimateSpeechMs(a.text, VOICE.SPEECH_RATE)
+          } else if (a.kind === 'type') {
+            const span = Math.max(0, speechBusyUntil - performance.now())
+            await typeBetween(codeRef.current, a.text, '', span)
+          } else if (a.kind === 'edit') {
+            const span = Math.max(0, speechBusyUntil - performance.now())
+            const m = locate(codeRef.current, a.oldText)
+            let prefix: string
+            let suffix: string
+            if (m) {
+              prefix = codeRef.current.slice(0, m.start)
+              suffix = codeRef.current.slice(m.end)
+            } else {
+              // Snippet not found in the editor — append the new code so the edit isn't lost.
+              const base = codeRef.current
+              prefix = base && !base.endsWith('\n') ? base + '\n' : base
+              suffix = ''
+            }
+            applyCode(prefix + suffix) // remove the old snippet, then type the new in its place
+            await typeBetween(prefix, a.newText, suffix, span)
+          } else if (a.kind === 'delete') {
+            applyCode(deleteSnippet(codeRef.current, a.oldText))
+          } else if (a.kind === 'clear') {
+            applyCode('')
           }
         }
       })()
@@ -351,28 +337,13 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       // Wait for playback to finish the actions it has (or to bail on interrupt).
       await runner
 
-      // Stopped/torn down mid-flight, or superseded by an interruption (whose newer turn
+      // Paused/stopped mid-flight, or superseded by an interruption (whose newer turn
       // owns the editor + transcript): leave the partial in place and bail. A *timeout*
       // abort is not a user action — fall through so we recover instead of hanging.
       if (sessionRef.current !== mySession) return
       if (myRun !== runIdRef.current) return
 
-      // Error/timeout with nothing said: speak a short recovery line.
-      if ((failed || timedOut) && !narration.trim()) {
-        narration = TYPING_PLACEHOLDER
-        appendNarration('') // flush the placeholder into the bubble
-        const tts = ttsRef.current
-        if (tts) {
-          const buf = await tts.synthesize(narration)
-          if (sessionRef.current !== mySession || myRun !== runIdRef.current) return
-          if (buf) {
-            setStatus('speaking')
-            await tts.play(buf).ended
-          }
-        }
-      }
-
-      if (sessionRef.current !== mySession || myRun !== runIdRef.current) return
+      if ((failed || timedOut) && !narration.trim()) narration = TYPING_PLACEHOLDER
 
       // Persist the finished turn (drop the bubble if the candidate said nothing,
       // e.g. a pure-code answer with no narration) and the editor contents.
@@ -382,8 +353,19 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       commitMessages(finalMsgs)
       persistCode()
 
-      // All audio already finished (we awaited each line's playback) — just listen.
-      goListening()
+      if (ttsRef.current) {
+        // A placeholder set only at the end (error/timeout) was never streamed — speak it now.
+        if (!fedAny && narration.trim()) {
+          ttsRef.current.feed(normalizeNarration(narration).trim())
+          fedAny = true
+        }
+        // onSpeakingStart/End (createTts callbacks) drive the speaking→listening
+        // transition; if nothing was spoken (pure-code answer) just keep listening.
+        if (fedAny) ttsRef.current.finishReply()
+        else goListening()
+      } else {
+        setStatus(fallbackStatus)
+      }
     },
     [applyCode, commitMessages, goListening, language, persistCode, setStatus]
   )
@@ -392,6 +374,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
     async (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || !candidateRef.current) return
+      const prevStatus = statusRef.current
 
       // Mid-stream interruption: cancel the candidate's in-flight answer (keeping
       // the partial), then resume with the new message. If nothing's streaming
@@ -401,7 +384,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       ttsRef.current?.stop()
       processingRef.current = true
       commitMessages([...messagesRef.current, { role: 'user', content: trimmed, timestamp: now() }])
-      await sendToLLM(trimmed).finally(() => {
+      await sendToLLM(trimmed, prevStatus === 'speaking' ? 'listening' : prevStatus).finally(() => {
         // Only release if this turn wasn't superseded by an interruption (whose
         // new stream owns streamAbortRef); otherwise let the newer turn clear it.
         if (streamAbortRef.current === null) processingRef.current = false
@@ -505,6 +488,8 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
         accessToken,
         ctx,
         {
+          onSpeakingStart: () => setStatus('speaking'),
+          onSpeakingEnd: () => goListening(),
           onError: (e) => {
             console.error('[voice] tts error', e)
             goListening()
@@ -536,17 +521,8 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       } else {
         const greeting = `Hi, thanks for having me. I'm ${cand.name}. I'm excited to learn more about this opportunity.`
         commitMessages([{ role: 'assistant', content: greeting, timestamp: now() }])
-        // Synthesize the whole greeting, then play it (fire-and-forget → listen on end).
-        const buf = await ttsRef.current.synthesize(greeting)
-        if (sessionRef.current !== mySession) return
-        if (buf) {
-          setStatus('speaking')
-          ttsRef.current.play(buf).ended.then(() => {
-            if (sessionRef.current === mySession && statusRef.current === 'speaking') goListening()
-          })
-        } else {
-          goListening()
-        }
+        setStatus('speaking')
+        ttsRef.current.speak(greeting)
       }
     } catch (e) {
       console.error('[voice] start failed', e)

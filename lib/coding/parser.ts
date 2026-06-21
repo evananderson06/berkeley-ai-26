@@ -157,6 +157,15 @@ export class ActionAssembler {
       }
       this.runBuf += seg.text
     }
+    // Stream narration out at sentence boundaries so speech starts quickly (low
+    // time-to-first-audio) instead of waiting for the whole [SPEAK] run to close.
+    if (this.runChannel === 'speak') {
+      const m = this.runBuf.match(/^[\s\S]*[.!?\n]/)
+      if (m && m[0].trim()) {
+        out.push({ kind: 'speak', text: m[0] })
+        this.runBuf = this.runBuf.slice(m[0].length)
+      }
+    }
     return out
   }
 
