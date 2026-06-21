@@ -2,7 +2,7 @@
 
 **An AI hiring simulator.** You play the *interviewer*: enter a role, get a pool of three realistic AI candidates, interview them by voice (or text) — including live coding questions in a shared editor — then commit to a hire. The app grades **you** on how well you interviewed and whether you picked the right person, revealing the hidden truth about each candidate you couldn't see going in.
 
-The twist: each candidate has a **hidden "truthfulness profile"** (how good they really are, what they're hiding) that never reaches the browser. A polished résumé can hide a weak hire; a nervous, stuttering candidate might be the best in the pool. Your job is to find out through the conversation.
+The twist: each candidate has a **hidden "truthfulness profile"** (how good they really are, what they're hiding) that the UI never displays. A polished résumé can hide a weak hire; a nervous, stuttering candidate might be the best in the pool. Your job is to find out through the conversation.
 
 ---
 
@@ -12,16 +12,17 @@ The twist: each candidate has a **hidden "truthfulness profile"** (how good they
 2. [Environment variables](#environment-variables)
 3. [The full user journey](#the-full-user-journey)
 4. [How it works (architecture)](#how-it-works-architecture)
-5. [The candidate simulation](#the-candidate-simulation)
-6. [The voice interview pipeline](#the-voice-interview-pipeline)
-7. [Pages](#pages)
-8. [API routes](#api-routes)
-9. [State & data model](#state--data-model)
-10. [Project structure](#project-structure)
-11. [Tech stack](#tech-stack)
-12. [Configuration & tuning](#configuration--tuning)
-13. [Troubleshooting](#troubleshooting)
-14. [Security notes](#security-notes)
+5. [The multi-agent system](#the-multi-agent-system)
+6. [The candidate simulation](#the-candidate-simulation)
+7. [The voice interview pipeline](#the-voice-interview-pipeline)
+8. [Pages](#pages)
+9. [API routes](#api-routes)
+10. [State & data model](#state--data-model)
+11. [Project structure](#project-structure)
+12. [Tech stack](#tech-stack)
+13. [Configuration & tuning](#configuration--tuning)
+14. [Troubleshooting](#troubleshooting)
+15. [Security notes](#security-notes)
 
 ---
 
@@ -29,7 +30,7 @@ The twist: each candidate has a **hidden "truthfulness profile"** (how good they
 
 **Prerequisites**
 
-- **Node.js 18.18+** (or 20+) and npm
+- **Node.js 18.17+** (20+ recommended) and npm — the floor comes from Next.js 14.2; the app itself declares no `engines`
 - An **Anthropic API key** (required — powers every AI feature)
 - A **Deepgram API key** (required for the voice interview; the rest of the app works without it)
 - A modern Chromium-based browser (the voice mode uses the microphone, Web Audio API, and `MediaRecorder`)
@@ -39,8 +40,9 @@ The twist: each candidate has a **hidden "truthfulness profile"** (how good they
 ```bash
 npm install
 
-# create .env.local (see the next section) and fill in your keys
-cp .env.local.example .env.local   # if present; otherwise create it by hand
+# Create .env.local in the project root by hand and fill in your keys
+# (see the "Environment variables" section below for the template —
+#  there is no committed .env.local.example to copy).
 
 npm run dev
 ```
@@ -70,9 +72,10 @@ Create `.env.local` in the project root. **Never commit real keys** (`.env.local
 | `DEEPGRAM_API_KEY` | **Yes (for voice)** | Minting short-lived browser tokens for speech-to-text (Nova-3) and text-to-speech (Aura-2). Server-side only. |
 | `UPSTASH_REDIS_REST_URL` | Optional | Upstash Redis client. Wired up (`lib/redis.ts`) but **not currently on the hot path** — session state lives in the browser's `localStorage`. Safe to leave blank for local use. |
 | `UPSTASH_REDIS_REST_TOKEN` | Optional | Token for the Redis client above. |
-| `NEXT_PUBLIC_SENTRY_DSN` | Optional | Sentry error monitoring. Sentry is configured but effectively **off** when this is empty. |
+| `NEXT_PUBLIC_SENTRY_DSN` | Optional | Sentry error monitoring (read in `sentry.client/server/edge.config.ts`). Sentry is configured but effectively **off** when this is empty. |
 | `ARIZE_API_KEY` | Optional | Arize/OpenTelemetry tracing. Currently a **stub** (`lib/tracing.ts`); not active. |
-| `NEXT_PUBLIC_APP_URL` | Optional | App base URL (defaults to `http://localhost:3000`). |
+
+> **Build-time only (not needed in `.env.local` for local dev):** `next.config.mjs` reads `SENTRY_ORG`, `SENTRY_PROJECT`, and `CI` for Sentry source-map upload during `next build`. Leave them unset locally; CI sets them. These are the only other environment variables the repo reads.
 
 Example `.env.local` (placeholders — substitute your own):
 
@@ -83,7 +86,6 @@ UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 NEXT_PUBLIC_SENTRY_DSN=
 ARIZE_API_KEY=
-NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 ---
@@ -94,7 +96,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
  ┌─────────────┐   generate 3 candidates    ┌──────────────┐   pick one to talk to   ┌──────────────────────┐
  │  Landing /  │ ─────────────────────────▶ │ Candidates   │ ──────────────────────▶ │ Résumé  /  Interview │
  │ (job title  │  POST /api/generate-        │ /candidates  │                          │  /candidates/[id]/…  │
- │  + JD)      │  candidate ×5 (parallel)    │              │ ◀──── back, repeat ────  │                      │
+ │  + JD)      │  candidate ×3 (parallel)    │              │ ◀──── back, repeat ────  │                      │
  └─────────────┘                            └──────┬───────┘                          └──────────┬───────────┘
                                                    │ "Make hiring decision"                      │ interview by voice/text
                                                    ▼                                             │ + live coding editor
@@ -109,10 +111,10 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 2. **Candidates (`/candidates`)** — A grid of the 3 candidates (avatar, role, years, skills). Each card links to the candidate's **résumé** and to **interview** them. Once interviewed, a card shows an "Interviewed" badge and a jot-note summary.
 
-3. **Résumé (`/candidates/[id]/resume`)** — The candidate's résumé, rendered in one of **six visual formats** (classic, modern, executive, flashy, garish, …) chosen at generation time. This is a *document* the candidate "submitted," so it's deliberately styled like a real résumé, not like the app.
+3. **Résumé (`/candidates/[id]/resume`)** — The candidate's résumé, rendered in one of **five visual formats** (`classic`, `modern`, `executive`, `flashy`, `garish`) chosen at generation time. A sixth `chaotic` template lives in `components/resume-templates.tsx` for future use but isn't currently in the generation rotation. This is a *document* the candidate "submitted," so it's deliberately styled like a real résumé, not like the app.
 
 4. **Interview (`/candidates/[id]/interview`)** — The core experience. A three-pane workspace:
-   - **Left:** a voice "call" view (an animated avatar that reacts to who's speaking and your mic level) with an optional **transcript toggle**, a **mute** button, a barge-in level meter, and a **text box** to type questions.
+   - **Left:** a voice "call" view (an animated avatar that reacts to who's speaking and your mic level) with a **mute** button and a barge-in level meter. A header **transcript toggle** swaps the avatar for the running transcript and reveals a **text box** to type questions (the text box is hidden in the default voice-only view).
    - **Center:** a read-only **Monaco code editor**. When you ask a coding question, the candidate "thinks out loud while typing" — narration and code play back **line by line, in sync**.
    - **Right:** your private **interview notes**.
    - A **"View résumé"** button opens the résumé in a dialog without leaving the call.
@@ -128,10 +130,95 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 A single **Next.js 14 (App Router)** app. The browser holds all session state (`localStorage`); Next.js **route handlers** under `app/api/*` are thin servers around two external services:
 
-- **Anthropic Claude** (`claude-sonnet-4-6`) — candidate generation, the interview roleplay, the post-interview summary, and the final feedback. Structured outputs use **forced tool-use**; conversational/coding replies are plain text (the feedback and coding routes **stream** via Server-Sent Events).
+- **Anthropic Claude** (`claude-sonnet-4-6`) — candidate generation, the live interview agent, the post-interview summary, and the final feedback verdict. Structured outputs use **forced tool-use**; conversational/coding replies are plain text (the live interview and the feedback routes both **stream** via Server-Sent Events).
 - **Deepgram** — speech-to-text (**Nova-3**) and text-to-speech (**Aura-2**). The browser talks to Deepgram **directly over WebSockets**; the server only mints a short-lived (~30s) access token so the long-lived `DEEPGRAM_API_KEY` never reaches the client.
 
-**Why the hidden profile stays server-side:** each candidate's true quality, red/green flags, and coaching tiers are sent into Claude's *system prompt* on the server. The browser only ever receives the "clean" candidate (name, role, résumé, skills) — so the interviewer genuinely has to discover the truth, and the final feedback can grade them against information they never had.
+**The hidden profile.** Each candidate has a true `qualityTier` (exceptional / strong / adequate / mediocre / poor) plus `redFlags` and `greenFlags`. Those fields drive Claude's *system prompts* on the server — the live interview agent uses them to roleplay correctly, the summary agent uses them as private context, and the final feedback agent uses them as ground truth. **The UI never displays these fields anywhere** (no badges, no debug panel, no resume hint), so on screen the interviewer genuinely has to discover the truth through the conversation. *Implementation honesty:* the full `Candidate` object is currently shipped to the client and kept in `localStorage` so that the decision page can POST it back to `/api/generate-feedback` without a database — a DevTools-savvy user could read it. The intended separation is described in `CONTEXT.md` §0.2/§4.1; production would move state behind Redis and serve only a `CandidatePublic` projection.
+
+---
+
+## The multi-agent system
+
+**Four** Claude Sonnet 4.6 agents actually run across a session — the **Candidate Generator**, the **Live Interview Agent**, the **Interview Summary**, and the **Final Feedback** verdict — each with its own role, system prompt, and output contract. (There's also a built-but-unused text-interview fallback, and one planned-but-unbuilt agent — the Fit Assessor — both described below.) They are coordinated by the client (the candidate pool is built in parallel; the verdict is requested after the decision is made), and **the hidden candidate profile flows differently into each agent**, which is what makes the simulation work.
+
+```
+                                   ┌──────────────────────────────────────┐
+                                   │  HIDDEN GROUND TRUTH (server-side)   │
+                                   │  qualityTier · redFlags · greenFlags │
+                                   └──────────────────────────────────────┘
+                                                     │
+        ┌────────────────────────────────────────────┼────────────────────────────────────┐
+        ▼                                            ▼                                    ▼
+ ┌──────────────┐     ┌──────────────────┐    ┌──────────────────┐              ┌────────────────────┐
+ │ 1. CANDIDATE │     │ 2. LIVE INTERVIEW │    │ 3. INTERVIEW     │              │ 5. FINAL FEEDBACK  │
+ │    GENERATOR │ ─▶  │    AGENT (voice + │ ─▶ │    SUMMARY       │ ─── . . . ──▶│    (the verdict)   │
+ │  (×3 parallel)     │    coding, SSE)   │    │   (jot notes)    │              │   (streaming SSE)  │
+ └──────────────┘     └──────────────────┘    └──────────────────┘              └────────────────────┘
+       │                       ▲                      ▲                                   ▲
+       │                       │ (fallback)           │                                   │
+       │              ┌────────┴────────────┐         │                                   │
+       │              │ 2b. TEXT INTERVIEW  │         │                                   │
+       │              │    AGENT (legacy)   │         │                                   │
+       │              └─────────────────────┘         │                                   │
+       │                                              │                                   │
+       └──── public résumé/role/skills ───────────────┴────── transcripts + notes ────────┘
+```
+
+### 1. Candidate Generator — `POST /api/generate-candidate`
+
+Generates **one** realistic candidate per call against a specific `tierSpec` (one of eight archetypes — see [The candidate simulation](#the-candidate-simulation)) and `resumeStyle`. Uses **forced tool-use** (`create_candidate`) to return a fully-typed `Candidate` (name, initials, role, years, skills, résumé, plus the hidden `qualityTier` / `redFlags` / `greenFlags`).
+
+The landing page fires **3 of these in parallel** from a randomized slate built by `buildSlate()` in [app/page.tsx](app/page.tsx) — exactly one slot is drawn from `GOOD_FIT_ARCHETYPES` (weighted toward `strong`, with `adequate` as the floor) so every pool has a defensible hire; the other two are drawn from `ALL_ARCHETYPES` (the full spread, including the deceptive trap); finally the order is shuffled so the good fit never sits in the same position. Names are picked from a distinct list so no two share a first name.
+
+### 2. Live Interview Agent (voice + coding) — `POST /api/interview/code`
+
+The agent the interviewer actually talks to. **Streams Server-Sent Events** so spoken narration and editor actions flow into the browser in real time. The system prompt fuses several layers into a single persona:
+
+- **Identity** — name, role, résumé, skills (sent to Claude verbatim).
+- **Behavioral tier** — five behavior blocks keyed on `qualityTier` (exceptional → poor), with the hidden `redFlags` injected for the `poor` tier so they only surface under careful probing.
+- **Coding archetype** — `lib/coding/persona.ts` maps the tier (+ communication green flags) onto one of five coding personas: `articulate-ace`, `quiet-star`, `steady-mid`, `eager-struggler`, `confident-exaggerator`. This controls how the candidate **codes** (typing cadence, correctness, whether they bluff their complexity claim) — independent of how they **talk**.
+- **Speech disfluency** — a stable per-candidate verbal habit (`none` / `mild` / `moderate` / `heavy`) seeded from a hash of the candidate id, deliberately **uncorrelated** with quality.
+- **Rings of knowledge** — three concentric rings (on-résumé / adjacent / unrelated) that constrain how broadly the candidate will engage; prevents a growth marketer from suddenly writing perfect algorithms.
+
+The model outputs a custom protocol: spoken parts wrapped in `[SPEAK]…[/SPEAK]`, plus four editor ops — `[CODE]` (append), `[EDIT]old[NEW]new[/EDIT]` (in-place find-and-replace), `[DELETE]old[/DELETE]`, `[CLEAR]`. The client's playback runner ties them together so each line of code types out **across the duration of the spoken sentence that explains it** (line-by-line sync). The editor is **not wiped between turns** — the current contents are sent back as context so follow-ups patch the existing solution rather than rewriting it.
+
+### 2b. Text Interview Agent (fallback) — `POST /api/interview`
+
+Non-streaming, text-only roleplay using the same `qualityTier` + `redFlags` + rings-of-knowledge persona as the live agent. Not on the current UI path (the interview page always uses the live agent), but kept as a safety fallback and for anyone wiring up a non-voice flow.
+
+### 3. Interview Summary Agent — `POST /api/interview-summary`
+
+Runs once when the interviewer clicks **End interview**. Reads the full transcript + the hidden tier/flags and produces **3–6 short jot-note bullets** in a hiring manager's shorthand — what was covered, where the candidate was crisp, where they hedged. Explicitly instructed to use the hidden notes to *gauge accuracy* but **not to reveal them outright** ("that's the verdict's job"). The bullets show up next to each candidate card on the pool page and on the decision page.
+
+### 4. (Reserved) Fit Assessor
+
+Originally planned in `CONTEXT.md` §7.4 as a separate post-interview rescoring pass. **Not built** — the final feedback agent collapses scoring into its single end-of-session call instead.
+
+### 5. Final Feedback Agent (the verdict) — `POST /api/generate-feedback`
+
+Streams Server-Sent Events (progress steps trickle out at ~1.8s intervals while Claude is generating). Receives **everything**: all candidates with their hidden tiers and flags, every transcript, every note, the interviewer's pick, and the interviewer's reasoning. Uses **forced tool-use** (`generate_feedback`) to return a structured `FeedbackReport`:
+
+- `overallScore` (0–100)
+- `whatWentWell` (3–5 specific things, ideally with quotes)
+- `areasForImprovement` (3–5 concrete misses)
+- `correctHire` (the candidate id of the objectively best hire by true tier — `exceptional > strong > adequate > mediocre > poor`)
+- `userPickedCorrectly` (boolean)
+- `keyMoments` (2–4 direct quotes from the transcripts + commentary)
+
+The system prompt explicitly tells the agent to reward the interviewer for **seeing through both traps**: undervaluing a quiet-but-strong candidate is a mistake, *and* being fooled by a polished weak one is a mistake.
+
+### Why this works as a multi-agent system
+
+Each agent only sees the slice it needs, and the **same hidden profile reaches them in different ways**:
+
+| Agent | Sees `qualityTier`/flags? | Allowed to reveal them? |
+|---|---|---|
+| Candidate Generator | Sets them (per-spec) | n/a (they ARE the output) |
+| Live Interview Agent | Yes (in system prompt) | **No** — must roleplay, never break character |
+| Interview Summary | Yes (private context) | **No** — sets tone but doesn't label |
+| Final Feedback | Yes (ground truth) | **Yes** — this is the reveal |
+
+So the *same* facts shape the candidate's behavior, color the summary's tone, and become the final scorecard — without ever leaking onto the screen before the verdict.
 
 ---
 
@@ -154,7 +241,7 @@ This is what makes the interviews feel real. Each candidate is generated for the
 | `poor_deceptive` | poor | **Trap:** impressive on paper, hiding real red flags; cracks only under careful probing. |
 | `poor_underqualified` | poor | Enthusiastic but not ready; overestimates themselves (résumé even has typos). |
 
-The count and mix are just the `CANDIDATE_PIPELINE` array in `app/page.tsx` — add, remove, or re-tier slots freely.
+The count and mix live in `buildSlate()` (plus the `GOOD_FIT_ARCHETYPES` and `ALL_ARCHETYPES` arrays) in `app/page.tsx` — add, remove, or re-tier slots freely. `POOL_SIZE` controls how many candidates are generated.
 
 **Rings of knowledge (scope of competence).** The interview agent treats its knowledge as three concentric rings and decides which one a question falls in:
 
@@ -171,7 +258,7 @@ The count and mix are just the `CANDIDATE_PIPELINE` array in `app/page.tsx` — 
 
 **Embellishment.** Candidates may exaggerate, round up, or invent plausible specifics the way real people do — weaker/deceptive candidates inflate and claim credit they didn't earn; strong ones don't need to. Inconsistencies surface under pressure.
 
-> All of the above lives in the **system prompt**, server-side (`app/api/interview/code/route.ts`, `app/api/interview/route.ts`, `lib/coding/persona.ts`). It is never sent to the browser.
+> All of the above lives in the **system prompt**, server-side, and is never sent to the browser. The full set — tiers, rings, coding archetypes, disfluency, and embellishment — is built in `app/api/interview/code/route.ts` (with `lib/coding/persona.ts`). The legacy text route `app/api/interview/route.ts` carries only tiers, rings, and embellishment (no speech disfluency or coding archetypes).
 
 ---
 
@@ -224,8 +311,8 @@ All under `app/api/`. Claude calls use `claude-sonnet-4-6`.
 
 | Route | Method | Streaming | Purpose |
 |---|---|---|---|
-| `/api/generate-candidate` | POST | No | Generate **one** candidate (forced tool-use) for a given slot/tier/résumé style. The landing page calls this 5× in parallel. |
-| `/api/generate-candidates` | POST | No | Legacy multi-candidate generator (superseded by the per-candidate route above). |
+| `/api/generate-candidate` | POST | No | Generate **one** candidate (forced tool-use) for a given slot/tier/résumé style. The landing page calls this 3× in parallel from a randomized slate (`buildSlate()`). |
+| `/api/generate-candidates` | POST | **SSE** | Legacy multi-candidate generator (superseded by the per-candidate route above). Streams `text/event-stream` progress events plus a final payload; no longer called by the UI. |
 | `/api/interview/code` | POST | **SSE** | **The live interview agent.** Handles every turn — conversation *and* coding — streaming `[SPEAK]`/`[CODE]` deltas. Carries the hidden persona + rings/struggle/disfluency rules. |
 | `/api/interview` | POST | No | Legacy non-streaming text interview (kept as a fallback; not on the current UI path). |
 | `/api/interview-summary` | POST | No | Writes 3–6 terse jot-note bullets after an interview ends. |
@@ -241,7 +328,7 @@ There is **no database on the hot path** — the entire session lives in the bro
 
 | `localStorage` key | Contents |
 |---|---|
-| `interviewiq_candidates` | The full array of generated candidates (clean profile only). |
+| `interviewiq_candidates` | The full array of generated `Candidate` objects — note these currently include the hidden `qualityTier` / `redFlags` / `greenFlags` fields, not a sanitized public projection (see the [architecture](#how-it-works-architecture) and [security](#security-notes) notes). |
 | `interviewiq_job` | `{ jobTitle, jobDescription }`. |
 | `interviewiq_messages_{id}` | Interview transcript (`Message[]`) for a candidate. |
 | `interviewiq_code_{id}` | Current contents of the candidate's code editor. |
@@ -250,7 +337,9 @@ There is **no database on the hot path** — the entire session lives in the bro
 | `interviewiq_summary_{id}` | The generated jot-note summary. |
 | `interviewiq_feedback` | The final feedback report. |
 
-Core TypeScript types live in `types/index.ts` (`Candidate`, `Resume`, `Message`, `FeedbackReport`, …). The hidden fields on `Candidate` — `qualityTier`, `redFlags`, `greenFlags` — are sent to Claude server-side but are not surfaced in the UI.
+> `lib/session.ts` also defines an `interviewiq_session_id` key (a client UUID intended for future server-side sessions), but its helpers (`getOrCreateSessionId` / `clearSession`) have no callers — it's dead code, never written at runtime, so it's excluded from the table above.
+
+Core TypeScript types live in `types/index.ts` (`Candidate`, `Resume`, `Message`, `FeedbackReport`, …). The hidden fields on `Candidate` — `qualityTier`, `redFlags`, `greenFlags` — drive every Claude system prompt server-side and are **never surfaced in the UI**. They do currently ride along in the client-side `Candidate` object (so the decision page can POST them back to `/api/generate-feedback` without a backing database) — see the [architecture](#how-it-works-architecture) note on this.
 
 > To start fresh, clear site data / `localStorage` for `localhost:3000`, or just generate a new pool from the landing page.
 
@@ -261,8 +350,9 @@ Core TypeScript types live in `types/index.ts` (`Candidate`, `Resume`, `Message`
 ```
 app/
   page.tsx                      Landing (candidate generation pipeline)
-  layout.tsx                    Root layout, fonts, <Nav>
+  layout.tsx                    Root layout, fonts
   globals.css                   Theme tokens (porcelain · pine · brass)
+  fonts/                        Geist Sans/Mono local font files
   candidates/
     page.tsx                    Candidate pool
     [id]/resume/page.tsx        Résumé view
@@ -279,21 +369,23 @@ app/
     deepgram-token/             Short-lived browser token minting
     save-notes/                 Notes endpoint (stub)
 components/
-  nav.tsx, loading-screen.tsx, summary-notes.tsx
+  loading-screen.tsx, summary-notes.tsx
   code-editor.tsx               Monaco wrapper (read-only, auto-scroll)
-  resume-templates.tsx          The six résumé formats + dispatcher
+  resume-templates.tsx          Résumé formats (5 in active rotation + a chaotic template) + dispatcher
   ui/                           shadcn / base-ui primitives (card, button, dialog, …)
 lib/
   anthropic.ts                  Anthropic SDK client
+  utils.ts                      cn() class-name helper (clsx + tailwind-merge)
   voice/
     config.ts                   VOICE tuning knobs + voice assignment
     useVoiceInterview.ts        Voice orchestration hook
     mic.ts, stt.ts, tts.ts      Mic capture, Deepgram STT, Deepgram TTS
+    pronounce.ts                Spoken-form normalization for TTS (big-O, dotted ids)
   coding/
     persona.ts                  Coding archetypes, speech disfluency, typing cadence
     parser.ts, playback.ts, edits.ts   [SPEAK]/[CODE] parsing + line-by-line playback
   data.ts                       Placeholder candidates / feedback (offline fallback)
-  redis.ts, session.ts          Upstash Redis (not on hot path)
+  redis.ts, session.ts          Upstash Redis + client session id (neither on hot path)
   tracing.ts                    Arize/OTel tracing stub
 types/index.ts                  Shared types
 ```
@@ -335,7 +427,7 @@ Voice behavior is tuned in **`lib/voice/config.ts`**:
 - **No microphone / no audio.** Grant mic permission when prompted; use a Chromium-based browser. Click anywhere once if the candidate's voice doesn't start (browsers require a user gesture to unlock audio).
 - **The candidate interrupts itself.** You're on open speakers and its own voice is tripping barge-in — raise the barge-in slider / `THRESHOLD`, or use headphones.
 - **Speech stutters at the start of a reply.** Nudge `PLAYBACK_LEAD_S` up a little.
-- **`next build` fails with `Cannot find module for page: /api/interview`.** Stale build cache — delete `.next/` and rebuild (`rm -rf .next && npm run build`).
+- **`next build` fails with a stale build-cache error.** A generic Next.js issue — delete the `.next/` cache and rebuild. PowerShell: `Remove-Item -Recurse -Force .next; npm run build` (macOS/Linux: `rm -rf .next && npm run build`).
 - **Everything AI fails.** Check `ANTHROPIC_API_KEY`. Server route errors are logged to the terminal with a `[route-name]` prefix.
 - **Want a clean slate.** Clear `localStorage` for `localhost:3000` or generate a new candidate pool.
 
@@ -343,6 +435,6 @@ Voice behavior is tuned in **`lib/voice/config.ts`**:
 
 ## Security notes
 
-- **All API keys are server-side.** `ANTHROPIC_API_KEY` and `DEEPGRAM_API_KEY` are only read in `app/api/*` route handlers. The browser receives only a **short-lived (~30s) Deepgram token**, never a long-lived key.
-- **The hidden candidate profile never reaches the client.** Quality tiers and red/green flags exist only in server-side prompts.
+- **All API keys are server-side.** `ANTHROPIC_API_KEY` is read in `lib/anthropic.ts` (a server-only module imported solely by `app/api/*` routes); `DEEPGRAM_API_KEY` is read in the `app/api/deepgram-token` route handler. Neither is ever bundled to the client — the browser receives only a **short-lived (~30s) Deepgram token**, never a long-lived key.
+- **The hidden candidate profile is never displayed.** `qualityTier` / `redFlags` / `greenFlags` are only ever rendered into Claude system prompts and the final verdict. The fields ride along in the client-side `Candidate` blob today (so the decision page can POST them back without a database) — a determined user could read them in DevTools. Production deployments should move session state behind Redis and project to a `CandidatePublic` shape before serialization (see `CONTEXT.md` §4.1).
 - **Never commit `.env.local`.** Keep it git-ignored. If real keys have ever been committed or shared, **rotate them** (regenerate in the Anthropic / Deepgram / Upstash dashboards).
