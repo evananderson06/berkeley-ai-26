@@ -123,7 +123,7 @@ export default function InterviewPage() {
     return <LoadingScreen message="Writing up the interview summary…" progress={summaryProgress} />
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)] bg-ground">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-ground">
       {/* Header */}
       <div className="border-b border-line bg-surface px-6 py-3 flex items-center justify-between shrink-0">
         <div>
