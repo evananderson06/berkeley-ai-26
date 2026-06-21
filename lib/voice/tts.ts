@@ -1,26 +1,29 @@
-// Deepgram Aura-2 streaming TTS via a RAW browser WebSocket.
+// Deepgram Aura-2 TTS via a RAW browser WebSocket.
 //
 // Why raw (not @deepgram/sdk v5): the SDK's speak socket runs JSON.parse on EVERY
 // incoming frame before your handler, so Aura's binary linear16 PCM throws inside the
 // SDK and never reaches you. A raw WebSocket with binaryType='arraybuffer' gives us the
 // audio directly. Auth is via the Sec-WebSocket-Protocol subprotocol. See CONTEXT.md §17.6.
 //
-// End-of-reply is gated on the server's "Flushed" control frame AND the local queue
-// draining, so streaming gaps don't prematurely flip the state machine.
+// Playback model (CONTEXT.md §17.6/§17.7): synthesize a whole line into ONE complete
+// AudioBuffer (collect every PCM frame until the server's "Flushed"), then play that
+// single buffer. One contiguous buffer = no underruns/stutter, and a known exact
+// duration the caller uses to pace code typing in lockstep with the speech.
 
 import { VOICE } from './config'
 
 export interface TtsController {
-  speak: (text: string) => void // one-shot reply (e.g. the greeting)
-  feed: (text: string) => void // stream a clause of an in-progress reply
-  finishReply: () => void // no more clauses coming — allow the reply to end
-  stop: () => void // barge-in: drop queued audio + halt server synthesis
+  /** Synthesize `text` fully and resolve with one AudioBuffer (or null if empty/stopped). */
+  synthesize: (text: string) => Promise<AudioBuffer | null>
+  /** Play a synthesized buffer. Returns its real (rate-adjusted) duration in ms and a
+   *  promise that resolves when playback finishes (or is stopped). */
+  play: (buffer: AudioBuffer) => { durationMs: number; ended: Promise<void>; stop: () => void }
+  /** Barge-in: cancel any in-flight synthesis + stop current playback. */
+  stop: () => void
   close: () => void
 }
 
 export interface TtsCallbacks {
-  onSpeakingStart?: () => void
-  onSpeakingEnd?: () => void
   onError?: (e: unknown) => void
 }
 
@@ -50,151 +53,116 @@ export function createTts(
     ])
     ws.binaryType = 'arraybuffer'
 
-    let nextStart = 0
-    let active = false // currently playing a reply
-    let flushed = false // server signalled end of the current reply's audio
-    let expectingMore = false // more clauses of this reply are still coming
-    let generation = 0 // bumped on stop() to invalidate in-flight audio
-    const sources = new Set<AudioBufferSourceNode>()
+    let generation = 0 // bumped on stop() to invalidate in-flight synthesis/playback
+    let currentSource: AudioBufferSourceNode | null = null
+    // The in-flight synthesis collecting PCM frames until the server's Flushed.
+    let collector: {
+      chunks: Float32Array[]
+      len: number
+      gen: number
+      resolve: (b: AudioBuffer | null) => void
+    } | null = null
 
-    // Coalesce Aura's many small PCM frames into ~120ms buffers before scheduling.
-    // Scheduling one node per tiny frame creates a boundary (and, with playbackRate,
-    // a resampling seam) at every frame → audible stutter, worst at the start where
-    // frames are smallest/burstiest. Fewer, larger buffers play smoothly.
-    const MIN_BUFFER_SAMPLES = Math.round(VOICE.TTS_SAMPLE_RATE * 0.12)
-    const TAIL_FLUSH_MS = 60 // flush a partial buffer if the stream pauses this long
-    let pending: Float32Array[] = []
-    let pendingLen = 0
-    let flushTimer: ReturnType<typeof setTimeout> | null = null
-
-    const clearPending = () => {
-      if (flushTimer) {
-        clearTimeout(flushTimer)
-        flushTimer = null
+    function finishCollect() {
+      if (!collector) return
+      const { chunks, len, gen, resolve: res } = collector
+      collector = null
+      if (gen !== generation || len === 0) {
+        res(null)
+        return
       }
-      pending = []
-      pendingLen = 0
-    }
-
-    // A reply ends only once the caller has stopped feeding clauses
-    // (expectingMore === false), the server has flushed, and the queue drained —
-    // so inter-clause gaps in a streamed reply don't flip the state machine.
-    function maybeEnd(gen: number) {
-      if (active && flushed && !expectingMore && sources.size === 0 && gen === generation) {
-        active = false
-        cbs.onSpeakingEnd?.()
-      }
-    }
-
-    function synth(text: string) {
-      const t = text.trim()
-      if (!t || ws.readyState !== WebSocket.OPEN) return
-      flushed = false
-      ws.send(JSON.stringify({ type: 'Speak', text: t }))
-      ws.send(JSON.stringify({ type: 'Flush' })) // synthesize now → low time-to-first-audio
-    }
-
-    // Concatenate everything buffered so far into one AudioBuffer and schedule it.
-    function scheduleBuffer(gen: number) {
-      if (flushTimer) {
-        clearTimeout(flushTimer)
-        flushTimer = null
-      }
-      if (gen !== generation || pendingLen === 0) return
-      const merged = new Float32Array(pendingLen)
+      const merged = new Float32Array(len)
       let off = 0
-      for (const c of pending) {
+      for (const c of chunks) {
         merged.set(c, off)
         off += c.length
       }
-      pending = []
-      pendingLen = 0
-
       const buffer = audioCtx.createBuffer(1, merged.length, VOICE.TTS_SAMPLE_RATE)
       buffer.getChannelData(0).set(merged)
-      const src = audioCtx.createBufferSource()
-      src.buffer = buffer
-      src.playbackRate.value = VOICE.SPEECH_RATE // faster speech (Aura has no rate param)
-      src.connect(audioCtx.destination)
-      if (!active) {
-        active = true
-        nextStart = audioCtx.currentTime + VOICE.PLAYBACK_LEAD_S // jitter headroom on first buffer
-        cbs.onSpeakingStart?.()
-      }
-      // If we've fallen behind (underrun), don't just snap to "now" with zero slack —
-      // that leaves us gap-prone for the rest of the reply. Rebuild the jitter buffer.
-      if (nextStart < audioCtx.currentTime) nextStart = audioCtx.currentTime + VOICE.PLAYBACK_LEAD_S
-      src.start(nextStart)
-      nextStart += buffer.duration / VOICE.SPEECH_RATE // sped-up buffer plays for less time
-      sources.add(src)
-      src.onended = () => {
-        sources.delete(src)
-        maybeEnd(gen)
-      }
-    }
-
-    function enqueue(pcm: ArrayBuffer, gen: number) {
-      if (gen !== generation) return // stale chunk from a barged-in reply
-      const f32 = int16ToFloat32(pcm)
-      if (f32.length === 0) return
-      pending.push(f32)
-      pendingLen += f32.length
-      if (pendingLen >= MIN_BUFFER_SAMPLES) {
-        scheduleBuffer(gen)
-      } else {
-        // Not enough for a full buffer yet — flush the remainder if the stream stalls,
-        // so trailing audio (end of a clause) isn't held back indefinitely.
-        if (flushTimer) clearTimeout(flushTimer)
-        flushTimer = setTimeout(() => {
-          flushTimer = null
-          scheduleBuffer(generation)
-        }, TAIL_FLUSH_MS)
-      }
+      res(buffer)
     }
 
     const controller: TtsController = {
-      speak: (text) => {
-        expectingMore = false
-        synth(text)
+      synthesize: (text) => {
+        const t = text.trim()
+        if (!t || ws.readyState !== WebSocket.OPEN) return Promise.resolve(null)
+        if (collector) {
+          // Shouldn't happen (callers serialize), but never strand a pending promise.
+          collector.resolve(null)
+          collector = null
+        }
+        return new Promise<AudioBuffer | null>((res) => {
+          collector = { chunks: [], len: 0, gen: generation, resolve: res }
+          ws.send(JSON.stringify({ type: 'Speak', text: t }))
+          ws.send(JSON.stringify({ type: 'Flush' })) // synthesize now
+        })
       },
-      feed: (text) => {
-        expectingMore = true
-        synth(text)
+
+      play: (buffer) => {
+        const gen = generation
+        const src = audioCtx.createBufferSource()
+        src.buffer = buffer
+        src.playbackRate.value = VOICE.SPEECH_RATE // faster speech (Aura has no rate param)
+        src.connect(audioCtx.destination)
+        currentSource = src
+        const ended = new Promise<void>((res) => {
+          src.onended = () => {
+            if (currentSource === src) currentSource = null
+            res()
+          }
+        })
+        if (gen !== generation) {
+          // Barged-in between synth and play — don't start.
+          try {
+            src.disconnect()
+          } catch {}
+          if (currentSource === src) currentSource = null
+          return { durationMs: 0, ended: Promise.resolve(), stop: () => {} }
+        }
+        src.start(audioCtx.currentTime + 0.04) // tiny lead; the buffer is contiguous
+        return {
+          durationMs: (buffer.duration / VOICE.SPEECH_RATE) * 1000,
+          ended,
+          stop: () => {
+            try {
+              src.stop()
+            } catch {}
+          },
+        }
       },
-      finishReply: () => {
-        expectingMore = false
-        maybeEnd(generation)
-      },
+
       stop: () => {
-        generation++ // invalidate queued + in-flight chunks
-        clearPending()
+        generation++ // invalidate in-flight synth + playback
+        if (collector) {
+          collector.resolve(null)
+          collector = null
+        }
         try {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'Clear' }))
         } catch {}
-        sources.forEach((s) => {
+        if (currentSource) {
           try {
-            s.stop()
+            currentSource.stop()
           } catch {}
-        })
-        sources.clear()
-        active = false
-        flushed = false
-        expectingMore = false
-        nextStart = audioCtx.currentTime
-        // NB: we do NOT fire onSpeakingEnd here — the caller (hook) owns the
-        // post-barge-in transition, avoiding a double state update.
+          currentSource = null
+        }
       },
+
       close: () => {
-        clearPending()
+        generation++
+        if (collector) {
+          collector.resolve(null)
+          collector = null
+        }
+        if (currentSource) {
+          try {
+            currentSource.stop()
+          } catch {}
+          currentSource = null
+        }
         try {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'Close' }))
         } catch {}
-        sources.forEach((s) => {
-          try {
-            s.stop()
-          } catch {}
-        })
-        sources.clear()
         try {
           ws.close()
         } catch {}
@@ -211,21 +179,27 @@ export function createTts(
       else cbs.onError?.(e)
     }
     ws.onmessage = (ev) => {
-      const gen = generation
       if (typeof ev.data === 'string') {
         // JSON control frame: Metadata / Flushed / Cleared / Warning
         try {
           const m = JSON.parse(ev.data)
-          if (m.type === 'Flushed') {
-            scheduleBuffer(gen) // play any sub-threshold tail before considering the reply done
-            flushed = true
-            maybeEnd(gen)
-          }
+          if (m.type === 'Flushed') finishCollect()
         } catch {}
         return
       }
-      if (ev.data instanceof ArrayBuffer) enqueue(ev.data, gen)
-      else if (ArrayBuffer.isView(ev.data)) enqueue((ev.data as ArrayBufferView).buffer as ArrayBuffer, gen)
+      if (!collector) return
+      const ab =
+        ev.data instanceof ArrayBuffer
+          ? ev.data
+          : ArrayBuffer.isView(ev.data)
+            ? ((ev.data as ArrayBufferView).buffer as ArrayBuffer)
+            : null
+      if (!ab) return
+      const f32 = int16ToFloat32(ab)
+      if (f32.length) {
+        collector.chunks.push(f32)
+        collector.len += f32.length
+      }
     }
   })
 }

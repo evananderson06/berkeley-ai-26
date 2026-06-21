@@ -40,12 +40,3 @@ export class ActionQueue {
 export function tokenizeCode(text: string): string[] {
   return text.match(/\s+|\w+|[^\s\w]/g) ?? [text]
 }
-
-// Rough spoken duration of a narration chunk, used to pace the code typing so a
-// line finishes typing about when its explanation finishes being spoken. Aura
-// speaks ~180 wpm; we bias a little slow and floor it so short lines still land.
-// `rate` mirrors the playback speed-up so faster speech ⇒ faster typing (stays in sync).
-export function estimateSpeechMs(text: string, rate = 1): number {
-  const words = text.trim().split(/\s+/).filter(Boolean).length
-  return Math.max(700, Math.round((words * 320) / rate))
-}
