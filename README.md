@@ -1,6 +1,6 @@
 # InterviewIQ
 
-**An AI hiring simulator.** You play the *interviewer*: enter a role, get a pool of eight realistic AI candidates, interview them by voice (or text) — including live coding questions in a shared editor — then commit to a hire. The app grades **you** on how well you interviewed and whether you picked the right person, revealing the hidden truth about each candidate you couldn't see going in.
+**An AI hiring simulator.** You play the *interviewer*: enter a role, get a pool of three realistic AI candidates, interview them by voice (or text) — including live coding questions in a shared editor — then commit to a hire. The app grades **you** on how well you interviewed and whether you picked the right person, revealing the hidden truth about each candidate you couldn't see going in.
 
 The twist: each candidate has a **hidden "truthfulness profile"** (how good they really are, what they're hiding) that never reaches the browser. A polished résumé can hide a weak hire; a nervous, stuttering candidate might be the best in the pool. Your job is to find out through the conversation.
 
@@ -91,7 +91,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ## The full user journey
 
 ```
- ┌─────────────┐   generate 8 candidates    ┌──────────────┐   pick one to talk to   ┌──────────────────────┐
+ ┌─────────────┐   generate 3 candidates    ┌──────────────┐   pick one to talk to   ┌──────────────────────┐
  │  Landing /  │ ─────────────────────────▶ │ Candidates   │ ──────────────────────▶ │ Résumé  /  Interview │
  │ (job title  │  POST /api/generate-        │ /candidates  │                          │  /candidates/[id]/…  │
  │  + JD)      │  candidate ×5 (parallel)    │              │ ◀──── back, repeat ────  │                      │
@@ -105,9 +105,9 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
                                             └──────────────┘                                └──────────────────┘
 ```
 
-1. **Landing (`/`)** — Enter a **job title** and **job description**. On submit, the app fires **eight parallel** `POST /api/generate-candidate` calls (one per "slot" in a fixed pipeline of candidate archetypes), shows a progress loading screen, then saves the resulting candidates to `localStorage` and routes to the pool.
+1. **Landing (`/`)** — Enter a **job title** and **job description**. On submit, the app fires **three parallel** `POST /api/generate-candidate` calls (a randomized slate of candidate archetypes — see below), shows a progress loading screen, then saves the resulting candidates to `localStorage` and routes to the pool.
 
-2. **Candidates (`/candidates`)** — A grid of the 8 candidates (avatar, role, years, skills). Each card links to the candidate's **résumé** and to **interview** them. Once interviewed, a card shows an "Interviewed" badge and a jot-note summary.
+2. **Candidates (`/candidates`)** — A grid of the 3 candidates (avatar, role, years, skills). Each card links to the candidate's **résumé** and to **interview** them. Once interviewed, a card shows an "Interviewed" badge and a jot-note summary.
 
 3. **Résumé (`/candidates/[id]/resume`)** — The candidate's résumé, rendered in one of **six visual formats** (classic, modern, executive, flashy, garish, …) chosen at generation time. This is a *document* the candidate "submitted," so it's deliberately styled like a real résumé, not like the app.
 
@@ -141,7 +141,7 @@ This is what makes the interviews feel real. Each candidate is generated for the
 
 **Quality ladder (true quality — hidden from the interviewer).** Candidates are rated on a five-rung ladder that drives their behavior and the "correct hire": **exceptional › strong › adequate › mediocre › poor**.
 
-**The slate (8 archetypes).** Each pool is generated from a fixed set of eight archetypes so it spans the realistic spectrum — including two *traps*: a genuinely strong candidate who interviews modestly, and a weak one who looks impressive on paper.
+**The slate (3 candidates, randomized).** Each session draws **3** candidates at random from the archetypes below — but **one slot is always a genuine good fit** (drawn from the good-fit archetypes, weighted toward `strong`, with `adequate` as the floor — never worse), so there's always a defensible hire. The other two can be anything, and the order is shuffled so position never gives away the answer. Two of the archetypes are deliberate *traps*: a genuinely strong candidate who interviews modestly, and a weak one who looks impressive on paper. (Pool size + weighting live in `buildSlate()` / the archetype arrays in `app/page.tsx`.)
 
 | Archetype (`tierSpec`) | True tier | Behaves like |
 |---|---|---|

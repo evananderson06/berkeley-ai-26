@@ -40,20 +40,66 @@ function pickDistinctNames(count: number): string[] {
   return Array.from({ length: count }, (_, i) => `${firsts[i]} ${lasts[i]}`)
 }
 
-const CANDIDATE_PIPELINE: Array<{
-  spec: Omit<CandidateSpec, 'jobTitle' | 'jobDescription' | 'index'>
-  message: string
-  progress: number
-}> = [
-  { spec: { tierSpec: 'exceptional_standout', resumeStyle: 'executive' }, message: 'Sourcing a standout candidate…',         progress: 12 },
-  { spec: { tierSpec: 'strong_solid',         resumeStyle: 'modern'    }, message: 'Lining up a strong contender…',          progress: 24 },
-  { spec: { tierSpec: 'strong_understated',   resumeStyle: 'classic'   }, message: 'Adding someone easy to underestimate…',  progress: 36 },
-  { spec: { tierSpec: 'adequate_senior',      resumeStyle: 'modern'    }, message: 'Rounding out the senior pool…',          progress: 48 },
-  { spec: { tierSpec: 'adequate_junior',      resumeStyle: 'classic'   }, message: 'Adding a promising up-and-comer…',       progress: 60 },
-  { spec: { tierSpec: 'mediocre_coaster',     resumeStyle: 'flashy'    }, message: 'Filling out the middle of the pack…',    progress: 72 },
-  { spec: { tierSpec: 'poor_deceptive',       resumeStyle: 'executive' }, message: 'Slipping in a polished wildcard…',       progress: 84 },
-  { spec: { tierSpec: 'poor_underqualified',  resumeStyle: 'garish'    }, message: 'Finishing the candidate pool…',          progress: 94 },
+type Archetype = CandidateSpec['tierSpec']
+type Spec = Omit<CandidateSpec, 'jobTitle' | 'jobDescription' | 'index'>
+
+const POOL_SIZE = 3
+
+// The one guaranteed "good fit" slot draws from these — weighted toward strong, with adequate
+// as the floor (never worse), so every pool has at least one genuinely hireable candidate.
+const GOOD_FIT_ARCHETYPES: Archetype[] = [
+  'exceptional_standout',
+  'strong_solid',
+  'strong_solid',
+  'strong_understated',
+  'adequate_senior',
+  'adequate_junior',
 ]
+
+// The remaining slots can be anyone — the full spread, good or bad.
+const ALL_ARCHETYPES: Archetype[] = [
+  'exceptional_standout',
+  'strong_solid',
+  'strong_understated',
+  'adequate_senior',
+  'adequate_junior',
+  'mediocre_coaster',
+  'poor_deceptive',
+  'poor_underqualified',
+]
+
+const RESUME_STYLES: Spec['resumeStyle'][] = ['executive', 'modern', 'classic', 'flashy', 'garish']
+
+// Generic loading flavor, shown in completion order — never maps to a specific candidate.
+const GENERATION_MESSAGES = [
+  'Reviewing the role…',
+  'Sourcing candidates…',
+  'Writing up résumés…',
+  'Finishing the candidate pool…',
+]
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+// A fresh randomized slate: one guaranteed good-fit candidate plus the rest drawn from the full
+// archetype spread, each with a distinct résumé style, then shuffled so the good fit isn't always
+// in the same position.
+function buildSlate(): Spec[] {
+  const tiers: Archetype[] = [pickRandom(GOOD_FIT_ARCHETYPES)]
+  while (tiers.length < POOL_SIZE) tiers.push(pickRandom(ALL_ARCHETYPES))
+  const styles = shuffle(RESUME_STYLES)
+  return shuffle(tiers).map((tierSpec, i) => ({ tierSpec, resumeStyle: styles[i % styles.length] }))
+}
 
 export default function HomePage() {
   const router = useRouter()
@@ -80,9 +126,10 @@ export default function HomePage() {
 
     try {
       let completed = 0
-      const names = pickDistinctNames(CANDIDATE_PIPELINE.length)
+      const slate = buildSlate()
+      const names = pickDistinctNames(slate.length)
 
-      const promises = CANDIDATE_PIPELINE.map(({ spec }, i) =>
+      const promises = slate.map((spec, i) =>
         fetch('/api/generate-candidate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -91,10 +138,9 @@ export default function HomePage() {
           if (!res.ok) throw new Error(`Failed on candidate ${i + 1}`)
           const data = await res.json()
           completed++
-          const pipeline = CANDIDATE_PIPELINE[completed - 1]
           flushSync(() => {
-            setLoadingMessage(pipeline?.message ?? 'Almost done…')
-            setLoadingProgress(Math.round((completed / CANDIDATE_PIPELINE.length) * 88) + 5)
+            setLoadingMessage(GENERATION_MESSAGES[completed - 1] ?? 'Almost done…')
+            setLoadingProgress(Math.round((completed / slate.length) * 88) + 5)
           })
           return { index: i, candidate: data.candidate as Candidate }
         })
@@ -140,8 +186,8 @@ export default function HomePage() {
           <CardHeader className="px-7 pt-7 pb-5">
             <CardTitle className="text-base font-semibold text-ink">New session</CardTitle>
             <CardDescription className="text-ink-2 text-sm leading-relaxed">
-              We&apos;ll create 8 realistic candidates spanning the full range — a clear standout, solid hires, some
-              middle-of-the-pack, and a couple designed to test your judgment.
+              We&apos;ll create 3 realistic candidates with a random mix of strengths — always including at least
+              one who&apos;s a genuine fit for the role.
             </CardDescription>
           </CardHeader>
           <CardContent className="px-7 pb-7">

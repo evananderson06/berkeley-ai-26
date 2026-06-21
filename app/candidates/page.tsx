@@ -10,6 +10,16 @@ import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
 import { Candidate } from '@/types'
 import { SummaryNotes } from '@/components/summary-notes'
 
+// Best candidate first → top-left of the grid, so a demo can spot the ideal hire at a glance.
+// Ordering only: the (hidden) true-quality tier sorts the cards but is never shown on them.
+const TIER_RANK: Record<Candidate['qualityTier'], number> = {
+  exceptional: 5,
+  strong: 4,
+  adequate: 3,
+  mediocre: 2,
+  poor: 1,
+}
+
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [jobTitle, setJobTitle] = useState<string>('')
@@ -19,7 +29,9 @@ export default function CandidatesPage() {
   useEffect(() => {
     const raw = localStorage.getItem('interviewiq_candidates')
     const loaded: Candidate[] = raw ? JSON.parse(raw) : PLACEHOLDER_CANDIDATES
-    setCandidates(loaded)
+    // Strongest first so the ideal candidate sits in the top-left card.
+    const ranked = [...loaded].sort((a, b) => (TIER_RANK[b.qualityTier] ?? 0) - (TIER_RANK[a.qualityTier] ?? 0))
+    setCandidates(ranked)
 
     const job = localStorage.getItem('interviewiq_job')
     if (job) setJobTitle(JSON.parse(job).jobTitle)
