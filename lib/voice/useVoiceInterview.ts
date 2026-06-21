@@ -235,52 +235,83 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       const queue = new ActionQueue()
       const assembler = new ActionAssembler()
 
-      // The runner: plays actions in order, overlapping each spoken line with the code
-      // it describes, and not starting the next line until the current speech finishes.
+      // Audio and visuals are DECOUPLED so the speech never stutters:
+      //
+      // - Audio: each [SPEAK] clause is fed to Deepgram the instant it streams in, so the
+      //   NEXT clause is already synthesizing while the current one is still playing. Aura
+      //   streams the clauses back contiguously and the TTS scheduler appends them gaplessly.
+      //   (Feeding a clause only AFTER the previous one finished — the old behavior — meant
+      //   each clause's synthesis latency landed as a silent gap at the clause boundary,
+      //   which is what made playback stutter. Feeding eagerly adds no up-front delay: the
+      //   first clause still goes out immediately.)
+      // - Visuals: narration text + the line-by-line code typing run on a separate serial
+      //   chain, paced so each code line still types across the span of the spoken line that
+      //   introduces it. `audioCursor` tracks the estimated wall-clock time at which the
+      //   audio fed so far finishes; visuals are scheduled against it.
+      let audioCursor = 0 // performance.now() at which the audio fed so far is estimated to end
+      let visuals: Promise<void> = Promise.resolve()
+      const onVisuals = (fn: () => Promise<void> | void) => {
+        visuals = visuals.then(() => (myRun === runIdRef.current ? fn() : undefined))
+      }
+
       const runner = (async () => {
-        let speechBusyUntil = 0
         for (;;) {
           if (myRun !== runIdRef.current) return
           const a = await queue.next()
-          if (!a) return
+          if (!a) break
           if (myRun !== runIdRef.current) return
 
           if (a.kind === 'speak') {
-            const wait = speechBusyUntil - performance.now()
-            if (wait > 0) await sleep(wait)
-            if (myRun !== runIdRef.current) return
-            appendNarration(a.text)
+            // Feed the audio NOW — don't wait for the previous clause — so playback is gapless.
             const clause = a.text.trim()
             if (clause) {
               ttsRef.current?.feed(clause)
               fedAny = true
             }
-            speechBusyUntil = performance.now() + estimateSpeechMs(a.text, VOICE.SPEECH_RATE)
+            const startAt = audioCursor === 0 ? performance.now() : audioCursor
+            audioCursor = startAt + estimateSpeechMs(a.text, VOICE.SPEECH_RATE)
+            const text = a.text
+            onVisuals(async () => {
+              const wait = startAt - performance.now()
+              if (wait > 0) await sleep(wait)
+              if (myRun !== runIdRef.current) return
+              appendNarration(text)
+            })
           } else if (a.kind === 'type') {
-            const span = Math.max(0, speechBusyUntil - performance.now())
-            await typeBetween(codeRef.current, a.text, '', span)
+            const spanEnd = audioCursor
+            const body = a.text
+            onVisuals(async () => {
+              const span = Math.max(0, spanEnd - performance.now())
+              await typeBetween(codeRef.current, body, '', span)
+            })
           } else if (a.kind === 'edit') {
-            const span = Math.max(0, speechBusyUntil - performance.now())
-            const m = locate(codeRef.current, a.oldText)
-            let prefix: string
-            let suffix: string
-            if (m) {
-              prefix = codeRef.current.slice(0, m.start)
-              suffix = codeRef.current.slice(m.end)
-            } else {
-              // Snippet not found in the editor — append the new code so the edit isn't lost.
-              const base = codeRef.current
-              prefix = base && !base.endsWith('\n') ? base + '\n' : base
-              suffix = ''
-            }
-            applyCode(prefix + suffix) // remove the old snippet, then type the new in its place
-            await typeBetween(prefix, a.newText, suffix, span)
+            const spanEnd = audioCursor
+            const { oldText, newText } = a
+            onVisuals(async () => {
+              const span = Math.max(0, spanEnd - performance.now())
+              const m = locate(codeRef.current, oldText)
+              let prefix: string
+              let suffix: string
+              if (m) {
+                prefix = codeRef.current.slice(0, m.start)
+                suffix = codeRef.current.slice(m.end)
+              } else {
+                // Snippet not found in the editor — append the new code so the edit isn't lost.
+                const base = codeRef.current
+                prefix = base && !base.endsWith('\n') ? base + '\n' : base
+                suffix = ''
+              }
+              applyCode(prefix + suffix) // remove the old snippet, then type the new in its place
+              await typeBetween(prefix, newText, suffix, span)
+            })
           } else if (a.kind === 'delete') {
-            applyCode(deleteSnippet(codeRef.current, a.oldText))
+            const { oldText } = a
+            onVisuals(() => applyCode(deleteSnippet(codeRef.current, oldText)))
           } else if (a.kind === 'clear') {
-            applyCode('')
+            onVisuals(() => applyCode(''))
           }
         }
+        await visuals // let the paced narration + typing finish before the turn wraps up
       })()
 
       const ctrl = new AbortController()
