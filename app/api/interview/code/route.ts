@@ -5,9 +5,15 @@ import { deriveArchetype, archetypeStyle } from '@/lib/coding/persona'
 
 // Streaming sibling of /api/interview, used when the interviewer asks a coding
 // question. The candidate "thinks out loud" and "types" at the same time: the
-// model is told to wrap spoken narration in [SPEAK]…[/SPEAK] and editor code in
-// [CODE]…[/CODE]. We just relay the raw token deltas as SSE; the client splits
-// the two channels (chat vs. Monaco) — see lib/coding/parser.ts.
+// model alternates spoken narration ([SPEAK]…[/SPEAK]) with editor ops, and the
+// client plays them back so each line of code types out while it's explained
+// (line-by-line sync — see lib/coding/parser.ts + lib/voice/useVoiceInterview.ts).
+//
+// Editor ops (the model edits the file in place instead of rewriting it):
+//   [CODE]…[/CODE]                  append brand-new code (first solution / new code)
+//   [EDIT]old…[NEW]new…[/EDIT]      replace an existing snippet with a new one
+//   [DELETE]old…[/DELETE]           remove an existing snippet
+//   [CLEAR]                         wipe the editor (only when starting a fresh problem)
 //
 // The persona/qualityTier system prompt stays server-side (CONTEXT.md §0.2): the
 // browser never sees how good the candidate actually is, or which archetype they
@@ -35,10 +41,25 @@ YOUR KEY SKILLS: ${candidate.skills.join(', ')}
 
 OUTPUT FORMAT — this is strict and important:
 - Wrap everything you SAY OUT LOUD (narration, reasoning, questions, complexity claims) in [SPEAK]...[/SPEAK].
-- Wrap everything you TYPE INTO THE EDITOR (only real code) in [CODE]...[/CODE].
-- Never put code inside [SPEAK], and never put prose/comments-as-conversation inside [CODE] (ordinary code comments are fine).
-- Alternate naturally: speak a little, type a little, speak again. Begin with a [SPEAK] segment.
+- Never put code inside [SPEAK] (ordinary code comments inside the editor blocks are fine).
+- Begin with a [SPEAK] segment.
 - Write all code in ${language}.
+
+EXPLAIN LINE BY LINE (important): work in small steps. Before each line or small group of
+lines, SAY what you're about to write and why in a short [SPEAK], then immediately write
+exactly that code in the matching editor block. The narration and the code are played back in
+sync, so keep each [SPEAK] roughly matched to the amount of code that follows it — one thought,
+one line. Don't dump a whole function and then explain it; narrate as you build it.
+
+EDITOR OPS — edit the file in place; do NOT retype the whole solution each turn:
+- [CODE]...[/CODE]  — append BRAND-NEW code. Use this for your first solution, or genuinely new lines.
+- [EDIT]<exact existing snippet>[NEW]<replacement>[/EDIT]  — change code that is already in the editor.
+  The snippet between [EDIT] and [NEW] must be copied EXACTLY from the current editor contents
+  (it will be located and replaced). Use the smallest unique snippet that covers the change.
+- [DELETE]<exact existing snippet>[/DELETE]  — remove code that is already in the editor.
+- [CLEAR]  — only when the interviewer moves you to a COMPLETELY different problem; wipes the editor.
+- When the interviewer asks you to fix, extend, optimise, or change what you've already written,
+  make targeted [EDIT]/[DELETE] ops against the existing code instead of rewriting it from scratch.
 
 CODING STYLE (stay in character — do NOT reveal this is a persona):
 ${style.promptInstructions}
@@ -76,7 +97,7 @@ export async function POST(req: NextRequest) {
   const history = buildHistory(Array.isArray(body.messages) ? body.messages : [])
 
   const userContent = body.code?.trim()
-    ? `${body.newMessage}\n\n[Your editor currently contains:]\n${body.code}`
+    ? `${body.newMessage}\n\n[The editor currently contains the code below. To change it, use [EDIT]/[DELETE] ops whose snippets are copied EXACTLY from this — do not retype the whole thing:]\n\`\`\`${language}\n${body.code}\n\`\`\``
     : body.newMessage
 
   const encoder = new TextEncoder()
