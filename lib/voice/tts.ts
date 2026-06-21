@@ -9,6 +9,7 @@
 // draining, so streaming gaps don't prematurely flip the state machine.
 
 import { VOICE } from './config'
+import { forSpeech } from './pronounce'
 
 export interface TtsController {
   speak: (text: string) => void // one-shot reply (e.g. the greeting)
@@ -87,7 +88,9 @@ export function createTts(
     }
 
     function synth(text: string) {
-      const t = text.trim()
+      // Rewrite technical notation (O(n), a.b, n^2…) into its spoken form. Only
+      // the audio is affected; the chat transcript keeps the original notation.
+      const t = forSpeech(text).trim()
       if (!t || ws.readyState !== WebSocket.OPEN) return
       flushed = false
       ws.send(JSON.stringify({ type: 'Speak', text: t }))
