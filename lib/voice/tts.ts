@@ -57,6 +57,25 @@ export function createTts(
     let generation = 0 // bumped on stop() to invalidate in-flight audio
     const sources = new Set<AudioBufferSourceNode>()
 
+    // Coalesce Aura's many small PCM frames into ~120ms buffers before scheduling.
+    // Scheduling one node per tiny frame creates a boundary (and, with playbackRate,
+    // a resampling seam) at every frame → audible stutter, worst at the start where
+    // frames are smallest/burstiest. Fewer, larger buffers play smoothly.
+    const MIN_BUFFER_SAMPLES = Math.round(VOICE.TTS_SAMPLE_RATE * 0.12)
+    const TAIL_FLUSH_MS = 60 // flush a partial buffer if the stream pauses this long
+    let pending: Float32Array[] = []
+    let pendingLen = 0
+    let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+    const clearPending = () => {
+      if (flushTimer) {
+        clearTimeout(flushTimer)
+        flushTimer = null
+      }
+      pending = []
+      pendingLen = 0
+    }
+
     // A reply ends only once the caller has stopped feeding clauses
     // (expectingMore === false), the server has flushed, and the queue drained —
     // so inter-clause gaps in a streamed reply don't flip the state machine.
@@ -75,30 +94,61 @@ export function createTts(
       ws.send(JSON.stringify({ type: 'Flush' })) // synthesize now → low time-to-first-audio
     }
 
-    function enqueue(pcm: ArrayBuffer, gen: number) {
-      if (gen !== generation) return // stale chunk from a barged-in reply
-      const f32 = int16ToFloat32(pcm)
-      if (f32.length === 0) return
-      const buffer = audioCtx.createBuffer(1, f32.length, VOICE.TTS_SAMPLE_RATE)
-      buffer.getChannelData(0).set(f32)
+    // Concatenate everything buffered so far into one AudioBuffer and schedule it.
+    function scheduleBuffer(gen: number) {
+      if (flushTimer) {
+        clearTimeout(flushTimer)
+        flushTimer = null
+      }
+      if (gen !== generation || pendingLen === 0) return
+      const merged = new Float32Array(pendingLen)
+      let off = 0
+      for (const c of pending) {
+        merged.set(c, off)
+        off += c.length
+      }
+      pending = []
+      pendingLen = 0
+
+      const buffer = audioCtx.createBuffer(1, merged.length, VOICE.TTS_SAMPLE_RATE)
+      buffer.getChannelData(0).set(merged)
       const src = audioCtx.createBufferSource()
       src.buffer = buffer
       src.playbackRate.value = VOICE.SPEECH_RATE // faster speech (Aura has no rate param)
       src.connect(audioCtx.destination)
       if (!active) {
         active = true
-        nextStart = audioCtx.currentTime + VOICE.PLAYBACK_LEAD_S // jitter headroom on first chunk
+        nextStart = audioCtx.currentTime + VOICE.PLAYBACK_LEAD_S // jitter headroom on first buffer
         cbs.onSpeakingStart?.()
       }
       // If we've fallen behind (underrun), don't just snap to "now" with zero slack —
       // that leaves us gap-prone for the rest of the reply. Rebuild the jitter buffer.
       if (nextStart < audioCtx.currentTime) nextStart = audioCtx.currentTime + VOICE.PLAYBACK_LEAD_S
       src.start(nextStart)
-      nextStart += buffer.duration / VOICE.SPEECH_RATE // sped-up chunk plays for less time
+      nextStart += buffer.duration / VOICE.SPEECH_RATE // sped-up buffer plays for less time
       sources.add(src)
       src.onended = () => {
         sources.delete(src)
         maybeEnd(gen)
+      }
+    }
+
+    function enqueue(pcm: ArrayBuffer, gen: number) {
+      if (gen !== generation) return // stale chunk from a barged-in reply
+      const f32 = int16ToFloat32(pcm)
+      if (f32.length === 0) return
+      pending.push(f32)
+      pendingLen += f32.length
+      if (pendingLen >= MIN_BUFFER_SAMPLES) {
+        scheduleBuffer(gen)
+      } else {
+        // Not enough for a full buffer yet — flush the remainder if the stream stalls,
+        // so trailing audio (end of a clause) isn't held back indefinitely.
+        if (flushTimer) clearTimeout(flushTimer)
+        flushTimer = setTimeout(() => {
+          flushTimer = null
+          scheduleBuffer(generation)
+        }, TAIL_FLUSH_MS)
       }
     }
 
@@ -117,6 +167,7 @@ export function createTts(
       },
       stop: () => {
         generation++ // invalidate queued + in-flight chunks
+        clearPending()
         try {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'Clear' }))
         } catch {}
@@ -134,6 +185,7 @@ export function createTts(
         // post-barge-in transition, avoiding a double state update.
       },
       close: () => {
+        clearPending()
         try {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'Close' }))
         } catch {}
@@ -165,6 +217,7 @@ export function createTts(
         try {
           const m = JSON.parse(ev.data)
           if (m.type === 'Flushed') {
+            scheduleBuffer(gen) // play any sub-threshold tail before considering the reply done
             flushed = true
             maybeEnd(gen)
           }
