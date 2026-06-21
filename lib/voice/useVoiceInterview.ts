@@ -32,7 +32,7 @@ import {
 
 const SPEAKING_WATCHDOG_MS = 15000 // force back to listening if 'speaking' never ends
 const LLM_TIMEOUT_MS = 30000
-const MAX_TYPING_DELAY_MS = 150 // cap so a long explanation doesn't type absurdly slowly
+const MAX_TYPING_DELAY_MS = 420 // cap so a long explanation doesn't type absurdly slowly
 const TYPING_PLACEHOLDER = 'Sorry, I had trouble responding there. Could you repeat the question?'
 
 // Candidates narrate with stray newlines around the [SPEAK]/[CODE] delimiters;
