@@ -387,7 +387,7 @@ export default function InterviewPage() {
         <div className="flex flex-col flex-1 min-w-[340px] border-r border-line bg-ink">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-white/50">
-              {language} · candidate editor
+              candidate editor
             </span>
             <span
               className={cn(
