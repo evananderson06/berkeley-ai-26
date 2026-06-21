@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { CheckCircle2, ArrowRight } from 'lucide-react'
 import { PLACEHOLDER_CANDIDATES } from '@/lib/data'
@@ -83,20 +82,19 @@ export default function CandidatesPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-1.5">
-                  {candidate.skills.slice(0, 3).map((skill) => (
-                    <Badge
+                <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                  {candidate.skills.slice(0, 4).map((skill) => (
+                    <span
                       key={skill}
-                      variant="secondary"
-                      className="text-xs bg-surface-2 border border-line text-ink-2 font-normal"
+                      className="inline-flex items-center rounded-md bg-pine-soft px-2 py-1 font-mono text-[11px] font-medium text-pine"
                     >
                       {skill}
-                    </Badge>
+                    </span>
                   ))}
-                  {candidate.skills.length > 3 && (
-                    <Badge variant="secondary" className="text-xs bg-surface-2 border border-line text-ink-2/60 font-normal">
-                      +{candidate.skills.length - 3}
-                    </Badge>
+                  {candidate.skills.length > 4 && (
+                    <span className="font-mono text-[11px] text-ink-2/55">
+                      +{candidate.skills.length - 4} more
+                    </span>
                   )}
                 </div>
 
