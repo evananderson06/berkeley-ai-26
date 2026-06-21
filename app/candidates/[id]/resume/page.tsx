@@ -28,7 +28,7 @@ export default function ResumePage() {
   if (!candidate) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-10">
-        <div className="h-96 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
+        <div className="h-96 flex items-center justify-center text-ink-2 text-sm">Loading…</div>
       </div>
     )
   }
@@ -36,7 +36,7 @@ export default function ResumePage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <div className="mb-6">
-        <Button asChild variant="ghost" size="sm" className="text-slate-500 hover:text-slate-700 -ml-2">
+        <Button asChild variant="ghost" size="sm" className="text-ink-2 hover:text-ink -ml-2">
           <Link href="/candidates">
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back to candidates
@@ -44,28 +44,29 @@ export default function ResumePage() {
         </Button>
       </div>
 
-      <div className="border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      {/* The candidate's actual résumé, rendered in one of several realistic formats
+          based on candidate.resumeStyle (ResumeDisplay handles that dispatch). The
+          templates are intentionally document-like, so only the card chrome is themed. */}
+      <div className="border border-line rounded-xl shadow-soft overflow-hidden animate-reveal-up">
         <ResumeDisplay candidate={candidate} />
       </div>
 
       {completed && summary && (
-        <div className="mt-6 rounded-lg bg-slate-50 border border-slate-100 p-4">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1">
-            Interview Summary
-          </p>
+        <div className="mt-6 rounded-xl bg-surface border border-line shadow-soft p-5">
+          <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-2 mb-2">Interview summary</p>
           <SummaryNotes summary={summary} />
         </div>
       )}
 
       <div className="mt-6 flex justify-end">
         {completed ? (
-          <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+          <div className="flex items-center gap-1.5 text-sm font-medium text-good">
             <CheckCircle2 className="h-4 w-4" />
             Interview completed
           </div>
         ) : (
-          <Button asChild className="bg-indigo-600 hover:bg-indigo-700 text-white">
-            <Link href={`/candidates/${id}/interview`}>Start Interview →</Link>
+          <Button asChild className="bg-pine hover:bg-pine/90 text-white">
+            <Link href={`/candidates/${id}/interview`}>Start interview →</Link>
           </Button>
         )}
       </div>

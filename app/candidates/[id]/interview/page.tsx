@@ -123,26 +123,26 @@ export default function InterviewPage() {
     return <LoadingScreen message="Writing up the interview summary…" progress={summaryProgress} />
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)]">
+    <div className="flex flex-col h-[calc(100vh-56px)] bg-ground">
       {/* Header */}
-      <div className="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
+      <div className="border-b border-line bg-surface px-6 py-3 flex items-center justify-between shrink-0">
         <div>
-          <p className="font-semibold text-slate-900 text-sm">{candidate?.name ?? '…'}</p>
-          <p className="text-xs text-slate-400">
-            {candidate?.role} · {candidate?.yearsExperience} yrs exp
+          <p className="font-semibold text-ink text-sm">{candidate?.name ?? '…'}</p>
+          <p className="font-mono text-[11px] text-ink-2/70">
+            {candidate?.role} · {candidate?.yearsExperience} yrs
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span
             className={cn(
-              'text-xs font-medium px-2 py-1 rounded',
-              muted && 'bg-red-50 text-red-700',
-              !muted && status === 'listening' && 'bg-emerald-50 text-emerald-700',
-              !muted && status === 'speaking' && 'bg-indigo-50 text-indigo-700',
-              !muted && status === 'thinking' && 'bg-amber-50 text-amber-700',
-              !muted && status === 'connecting' && 'bg-slate-100 text-slate-500',
-              !muted && status === 'error' && 'bg-red-50 text-red-700',
-              !muted && status === 'idle' && 'bg-slate-100 text-slate-400'
+              'font-mono text-[11px] uppercase tracking-[0.1em] px-2.5 py-1 rounded-full border',
+              muted && 'bg-bad/10 text-bad border-bad/25',
+              !muted && status === 'listening' && 'bg-pine-soft text-pine border-pine/20',
+              !muted && status === 'speaking' && 'bg-brass-soft text-brass border-brass/25',
+              !muted && status === 'thinking' && 'bg-surface-2 text-ink-2 border-line',
+              !muted && status === 'connecting' && 'bg-surface-2 text-ink-2 border-line',
+              !muted && status === 'error' && 'bg-bad/10 text-bad border-bad/25',
+              !muted && status === 'idle' && 'bg-surface-2 text-ink-2/60 border-line'
             )}
           >
             {muted ? '🔇 Mic muted' : STATUS_LABEL[status]}
@@ -152,7 +152,7 @@ export default function InterviewPage() {
             disabled={!candidate}
             variant="outline"
             size="sm"
-            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="border-line text-ink-2 hover:bg-surface-2 hover:text-ink"
           >
             View résumé
           </Button>
@@ -161,9 +161,9 @@ export default function InterviewPage() {
             disabled={ending}
             variant="outline"
             size="sm"
-            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="border-line text-ink-2 hover:bg-surface-2 hover:text-ink"
           >
-            {ending ? 'Ending…' : 'End Interview'}
+            {ending ? 'Ending…' : 'End interview'}
           </Button>
         </div>
       </div>
@@ -179,23 +179,23 @@ export default function InterviewPage() {
       {/* Body: voice transcript + always-on code editor + notes */}
       <div className="flex flex-1 overflow-hidden">
         {/* Transcript + voice controls */}
-        <div className="flex flex-col flex-1 border-r border-slate-200">
+        <div className="flex flex-col flex-1 border-r border-line">
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
             {messages.map((msg, i) => (
               <div key={i} className={cn('flex gap-3', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
                 <div
                   className={cn(
-                    'max-w-[70%] rounded-xl px-4 py-2.5 text-sm leading-relaxed',
+                    'max-w-[70%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
                     msg.role === 'user'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-white border border-slate-200 text-slate-800'
+                      ? 'bg-pine text-white rounded-br-md'
+                      : 'bg-surface border border-line text-ink rounded-bl-md'
                   )}
                 >
                   {msg.content}
                   <p
                     className={cn(
-                      'text-[10px] mt-1',
-                      msg.role === 'user' ? 'text-indigo-200' : 'text-slate-400'
+                      'font-mono text-[10px] mt-1.5',
+                      msg.role === 'user' ? 'text-white/55' : 'text-ink-2/55'
                     )}
                   >
                     {formatTime(msg.timestamp)}
@@ -206,7 +206,7 @@ export default function InterviewPage() {
 
             {interim && (
               <div className="flex gap-3 flex-row-reverse">
-                <div className="max-w-[70%] rounded-xl px-4 py-2.5 text-sm leading-relaxed bg-indigo-50 text-indigo-400 italic">
+                <div className="max-w-[70%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed bg-pine/10 text-pine/70 italic">
                   {interim}
                 </div>
               </div>
@@ -214,8 +214,8 @@ export default function InterviewPage() {
 
             {status === 'thinking' && (
               <div className="flex gap-3">
-                <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5">
-                  <span className="text-slate-400 text-sm">Thinking…</span>
+                <div className="bg-surface border border-line rounded-2xl rounded-bl-md px-4 py-2.5">
+                  <span className="text-ink-2 text-sm">Thinking…</span>
                 </div>
               </div>
             )}
@@ -223,15 +223,15 @@ export default function InterviewPage() {
           </div>
 
           {/* Voice control bar */}
-          <div className="border-t border-slate-200 bg-white px-4 py-3 space-y-3">
-            {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="border-t border-line bg-surface px-4 py-3 space-y-3">
+            {error && <p className="text-xs text-bad">{error}</p>}
 
             <div className="flex items-center gap-4">
               {status === 'error' ? (
                 <Button
                   onClick={() => start()}
                   disabled={!candidate || ending}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  className="bg-pine hover:bg-pine/90 text-white"
                 >
                   🎙 Enable microphone
                 </Button>
@@ -239,32 +239,29 @@ export default function InterviewPage() {
                 <Button
                   onClick={toggleMute}
                   disabled={!candidate || ending}
-                  className={cn(
-                    'text-white',
-                    muted ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
-                  )}
+                  className={cn('text-white', muted ? 'bg-bad hover:bg-bad/90' : 'bg-pine hover:bg-pine/90')}
                 >
                   {muted ? '🔇 Unmute mic' : '🎙 Mute mic'}
                 </Button>
               )}
 
               <div className="flex-1">
-                <div className="relative h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className="relative h-2 rounded-full bg-surface-2 border border-line overflow-hidden">
                   <div
                     className={cn(
                       'h-full transition-[width] duration-75',
-                      level > threshold ? 'bg-emerald-500' : 'bg-slate-300'
+                      level > threshold ? 'bg-brass' : 'bg-line'
                     )}
                     style={{ width: `${meterPct}%` }}
                   />
                   <div
-                    className="absolute top-[-2px] h-3 w-0.5 bg-red-500"
+                    className="absolute top-[-3px] h-3.5 w-0.5 bg-bad"
                     style={{ left: `${markerPct}%` }}
                     title="Barge-in threshold"
                   />
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 w-28">Barge-in threshold</span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-2/70 w-28">Barge-in level</span>
                   <input
                     type="range"
                     min={0.01}
@@ -272,22 +269,22 @@ export default function InterviewPage() {
                     step={0.005}
                     value={threshold}
                     onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                    className="flex-1"
+                    className="flex-1 accent-pine"
                   />
-                  <span className="text-[10px] text-slate-400 w-10 text-right">{threshold.toFixed(3)}</span>
+                  <span className="font-mono text-[10px] text-ink-2/70 w-10 text-right">{threshold.toFixed(3)}</span>
                 </div>
               </div>
             </div>
 
-            <p className="text-[11px] text-slate-400">
-              Voice is always on — just talk. Talk over the candidate (above the red marker) and it stops to
-              listen. Use <span className="font-medium">Mute mic</span> when you need to step away. Default
+            <p className="font-mono text-[10px] text-ink-2/60 leading-relaxed">
+              Voice is always on — just talk. Talk over the candidate (above the red mark) and it stops to listen.
+              Use <span className="font-medium text-ink-2">Mute mic</span> when you need to step away. Default
               threshold {VOICE.THRESHOLD}; lower with headphones, raise on open speakers.
             </p>
           </div>
 
           {/* Text input bar */}
-          <div className="border-t border-slate-200 bg-white px-4 py-3 flex gap-2 items-end">
+          <div className="border-t border-line bg-surface px-4 py-3 flex gap-2 items-end">
             <Textarea
               value={typedMessage}
               onChange={(e) => setTypedMessage(e.target.value)}
@@ -295,12 +292,12 @@ export default function InterviewPage() {
               placeholder="Type a question… (Enter to send, Shift+Enter for newline)"
               rows={1}
               disabled={ending || !candidate}
-              className="flex-1 resize-none text-sm min-h-[36px] max-h-32 py-2"
+              className="flex-1 resize-none text-sm min-h-[36px] max-h-32 py-2 border-line"
             />
             <Button
               onClick={handleSendTyped}
               disabled={!typedMessage.trim() || ending || !candidate}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+              className="bg-pine hover:bg-pine/90 text-white shrink-0"
               size="sm"
             >
               Send
@@ -309,17 +306,17 @@ export default function InterviewPage() {
         </div>
 
         {/* Code editor — always present; the candidate types here on coding questions */}
-        <div className="flex flex-col flex-1 min-w-[340px] border-r border-slate-200 bg-[#1e1e1e]">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-            <span className="text-xs font-medium uppercase tracking-widest text-slate-400">
+        <div className="flex flex-col flex-1 min-w-[340px] border-r border-line bg-ink">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-white/50">
               {language} · candidate editor
             </span>
             <span
               className={cn(
-                'rounded px-2 py-0.5 text-[10px] font-medium',
-                status === 'thinking' && 'bg-amber-900/40 text-amber-300',
-                status === 'speaking' && 'bg-emerald-900/40 text-emerald-300',
-                status !== 'thinking' && status !== 'speaking' && 'bg-slate-800 text-slate-400'
+                'rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider',
+                status === 'thinking' && 'bg-brass/20 text-brass',
+                status === 'speaking' && 'bg-good/25 text-[#9FE3C0]',
+                status !== 'thinking' && status !== 'speaking' && 'bg-white/10 text-white/45'
               )}
             >
               read-only
@@ -331,24 +328,24 @@ export default function InterviewPage() {
         </div>
 
         {/* Notes panel */}
-        <div className="w-72 shrink-0 flex flex-col bg-slate-50">
-          <div className="px-5 py-4 border-b border-slate-200">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Interview Notes</p>
+        <div className="w-72 shrink-0 flex flex-col bg-surface-2">
+          <div className="px-5 py-4 border-b border-line">
+            <p className="font-mono text-[10px] font-semibold text-ink-2 uppercase tracking-[0.16em]">Interview notes</p>
           </div>
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Jot down observations, red flags, follow-up questions…"
-            className="flex-1 resize-none border-0 rounded-none bg-transparent text-sm text-slate-700 focus-visible:ring-0 p-5"
+            className="flex-1 resize-none border-0 rounded-none bg-transparent text-sm text-ink focus-visible:ring-0 p-5"
           />
-          <div className="px-5 py-3 border-t border-slate-200">
+          <div className="px-5 py-3 border-t border-line">
             <Button
               onClick={saveNotes}
               variant="outline"
               size="sm"
-              className="w-full border-slate-200 text-slate-700 hover:bg-white"
+              className="w-full border-line text-ink hover:bg-surface"
             >
-              {notesSaved ? 'Saved ✓' : 'Save Notes'}
+              {notesSaved ? 'Saved ✓' : 'Save notes'}
             </Button>
           </div>
         </div>

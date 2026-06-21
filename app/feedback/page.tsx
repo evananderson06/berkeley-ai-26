@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { CheckCircle2, AlertCircle, Quote } from 'lucide-react'
 import { PLACEHOLDER_FEEDBACK, PLACEHOLDER_CANDIDATES } from '@/lib/data'
 import { FeedbackReport, Candidate } from '@/types'
+import { cn } from '@/lib/utils'
 
 export default function FeedbackPage() {
   const [report, setReport] = useState<FeedbackReport | null>(null)
@@ -25,72 +26,88 @@ export default function FeedbackPage() {
   if (!report) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-10">
-        <div className="h-96 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
+        <div className="h-96 flex items-center justify-center text-ink-2 text-sm">Loading…</div>
       </div>
     )
   }
 
   const correctCandidate = candidates.find((c) => c.id === report.correctHire)
   const scoreColor =
-    report.overallScore >= 80
-      ? 'text-emerald-600'
-      : report.overallScore >= 60
-      ? 'text-amber-600'
-      : 'text-red-600'
+    report.overallScore >= 80 ? 'text-good' : report.overallScore >= 60 ? 'text-brass' : 'text-bad'
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="mx-auto max-w-3xl px-6 py-12">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">Interview Feedback Report</h1>
-        <p className="mt-1 text-slate-500 text-sm">Here&apos;s how you did as an interviewer.</p>
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-pine mb-2">The verdict</p>
+        <h1 className="font-display text-3xl tracking-tight text-ink">How you did as an interviewer</h1>
+      </div>
+
+      {/* The ruling */}
+      <div className="relative overflow-hidden rounded-2xl bg-ink p-8 shadow-soft mb-7 animate-reveal-up">
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: 'radial-gradient(600px 320px at 82% -10%, rgba(198,138,46,.16), transparent 60%)' }}
+        />
+        <div className="relative space-y-4">
+          <span
+            className={cn(
+              'inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] px-3 py-1.5 rounded-full border',
+              report.userPickedCorrectly
+                ? 'bg-good/20 text-[#9FE3C0] border-good/40'
+                : 'bg-bad/20 text-[#F0A893] border-bad/40'
+            )}
+          >
+            {report.userPickedCorrectly ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Good call
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-3.5 w-3.5" /> Reconsider
+              </>
+            )}
+          </span>
+          <h2 className="font-display text-3xl sm:text-[40px] leading-[1.12] text-white max-w-2xl">
+            {report.userPickedCorrectly ? (
+              'You picked the right candidate.'
+            ) : (
+              <>
+                The strongest hire was <em className="italic text-brass">{correctCandidate?.name ?? 'someone else'}</em>.
+              </>
+            )}
+          </h2>
+          {!report.userPickedCorrectly && correctCandidate && (
+            <p className="text-[#C7D2CC] max-w-2xl leading-relaxed">{correctCandidate.summary}</p>
+          )}
+        </div>
       </div>
 
       {/* Score */}
-      <Card className="border-slate-200 shadow-sm mb-6">
-        <CardContent className="pt-6">
+      <Card className="border-line bg-surface shadow-soft rounded-xl mb-6">
+        <CardContent className="px-6 py-5">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-semibold text-slate-700">Overall Score</p>
-            <p className={`text-2xl font-bold ${scoreColor}`}>
-              {report.overallScore}<span className="text-base font-normal text-slate-400">/100</span>
+            <p className="text-sm font-semibold text-ink">Overall score</p>
+            <p className={cn('font-display text-3xl', scoreColor)}>
+              {report.overallScore}
+              <span className="font-mono text-sm font-normal text-ink-2 ml-1">/ 100</span>
             </p>
           </div>
-          <Progress value={report.overallScore} className="h-2 bg-slate-100 [&>div]:bg-indigo-500" />
-        </CardContent>
-      </Card>
-
-      {/* Correct hire reveal */}
-      <Card className={`border shadow-sm mb-6 ${report.userPickedCorrectly ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-        <CardContent className="pt-5 pb-5">
-          <div className="flex items-start gap-3">
-            {report.userPickedCorrectly ? (
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            )}
-            <div>
-              <p className={`font-semibold text-sm ${report.userPickedCorrectly ? 'text-emerald-800' : 'text-amber-800'}`}>
-                {report.userPickedCorrectly ? 'You picked the right candidate!' : 'The strongest candidate was actually…'}
-              </p>
-              {!report.userPickedCorrectly && correctCandidate && (
-                <p className="text-sm text-amber-700 mt-0.5">
-                  <strong>{correctCandidate.name}</strong> — {correctCandidate.summary}
-                </p>
-              )}
-            </div>
-          </div>
+          <Progress value={report.overallScore} className="h-2 bg-surface-2 [&>div]:bg-pine" />
         </CardContent>
       </Card>
 
       {/* What went well */}
-      <Card className="border-slate-200 shadow-sm mb-5">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700">What You Did Well</CardTitle>
+      <Card className="border-line bg-surface shadow-soft rounded-xl mb-5">
+        <CardHeader className="px-6 pt-5 pb-3">
+          <CardTitle className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2 font-medium">
+            What you did well
+          </CardTitle>
         </CardHeader>
-        <CardContent className="pt-0">
-          <ul className="space-y-2">
+        <CardContent className="px-6 pb-5 pt-0">
+          <ul className="space-y-2.5">
             {report.whatWentWell.map((item, i) => (
-              <li key={i} className="flex gap-2 text-sm text-slate-600">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+              <li key={i} className="flex gap-2.5 text-sm text-ink leading-relaxed">
+                <CheckCircle2 className="h-4 w-4 text-good shrink-0 mt-0.5" />
                 {item}
               </li>
             ))}
@@ -99,15 +116,17 @@ export default function FeedbackPage() {
       </Card>
 
       {/* Areas for improvement */}
-      <Card className="border-slate-200 shadow-sm mb-5">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700">Areas for Improvement</CardTitle>
+      <Card className="border-line bg-surface shadow-soft rounded-xl mb-5">
+        <CardHeader className="px-6 pt-5 pb-3">
+          <CardTitle className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2 font-medium">
+            Where to sharpen
+          </CardTitle>
         </CardHeader>
-        <CardContent className="pt-0">
-          <ul className="space-y-2">
+        <CardContent className="px-6 pb-5 pt-0">
+          <ul className="space-y-2.5">
             {report.areasForImprovement.map((item, i) => (
-              <li key={i} className="flex gap-2 text-sm text-slate-600">
-                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              <li key={i} className="flex gap-2.5 text-sm text-ink leading-relaxed">
+                <AlertCircle className="h-4 w-4 text-brass shrink-0 mt-0.5" />
                 {item}
               </li>
             ))}
@@ -117,19 +136,21 @@ export default function FeedbackPage() {
 
       {/* Key moments */}
       {report.keyMoments.length > 0 && (
-        <Card className="border-slate-200 shadow-sm mb-8">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold text-slate-700">Key Moments</CardTitle>
+        <Card className="border-line bg-surface shadow-soft rounded-xl mb-8">
+          <CardHeader className="px-6 pt-5 pb-3">
+            <CardTitle className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2 font-medium">
+              Key moments
+            </CardTitle>
           </CardHeader>
-          <CardContent className="pt-0 space-y-5">
+          <CardContent className="px-6 pb-5 pt-0 space-y-5">
             {report.keyMoments.map((moment, i) => (
               <div key={i}>
-                <blockquote className="flex gap-2 text-sm text-slate-600 italic">
-                  <Quote className="h-4 w-4 text-indigo-300 shrink-0 mt-0.5" />
+                <blockquote className="flex gap-2.5 text-ink italic font-display text-[15px] leading-relaxed">
+                  <Quote className="h-4 w-4 text-pine/40 shrink-0 mt-1.5" />
                   {moment.quote}
                 </blockquote>
-                <p className="text-xs text-slate-400 mt-1.5 pl-6">{moment.commentary}</p>
-                {i < report.keyMoments.length - 1 && <Separator className="mt-4" />}
+                <p className="text-[13px] text-ink-2 mt-1.5 pl-6 leading-relaxed">{moment.commentary}</p>
+                {i < report.keyMoments.length - 1 && <Separator className="mt-4 bg-line" />}
               </div>
             ))}
           </CardContent>
@@ -137,8 +158,8 @@ export default function FeedbackPage() {
       )}
 
       <div className="flex justify-center">
-        <Button asChild variant="outline" className="border-slate-200 text-slate-700 hover:bg-slate-50">
-          <Link href="/">← Start Over</Link>
+        <Button asChild variant="outline" className="border-line text-ink hover:bg-surface-2">
+          <Link href="/">← Start over</Link>
         </Button>
       </div>
     </div>

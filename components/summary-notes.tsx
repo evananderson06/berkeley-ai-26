@@ -9,10 +9,10 @@ export function SummaryNotes({ summary, className }: { summary: string; classNam
     .filter(Boolean)
   if (items.length === 0) return null
   return (
-    <ul className={cn('space-y-1', className)}>
+    <ul className={cn('space-y-2', className)}>
       {items.map((it, i) => (
-        <li key={i} className="flex gap-2 text-xs text-slate-600 leading-relaxed">
-          <span className="text-slate-300 shrink-0 mt-0.5">•</span>
+        <li key={i} className="flex gap-2.5 text-xs text-ink-2 leading-[1.5]">
+          <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-pine/50" />
           <span>{it}</span>
         </li>
       ))}

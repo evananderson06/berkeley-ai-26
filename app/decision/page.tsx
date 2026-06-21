@@ -14,14 +14,6 @@ import { Candidate, Message } from '@/types'
 import { LoadingScreen } from '@/components/loading-screen'
 import { SummaryNotes } from '@/components/summary-notes'
 
-const AVATAR_COLORS = [
-  'bg-indigo-100 text-indigo-700',
-  'bg-violet-100 text-violet-700',
-  'bg-sky-100 text-sky-700',
-  'bg-emerald-100 text-emerald-700',
-  'bg-amber-100 text-amber-700',
-]
-
 export default function DecisionPage() {
   const router = useRouter()
   const [candidates, setCandidates] = useState<Candidate[]>([])
@@ -110,36 +102,43 @@ export default function DecisionPage() {
   if (loading) return <LoadingScreen message={loadingMessage} progress={loadingProgress} />
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">Hiring Decision</h1>
-        <p className="mt-1 text-slate-500 text-sm">Review your notes and choose who you&apos;d hire.</p>
+    <div className="mx-auto max-w-3xl px-6 py-12">
+      <div className="mb-9">
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-pine mb-2">Hiring decision</p>
+        <h1 className="font-display text-3xl tracking-tight text-ink">Who are you hiring?</h1>
+        <p className="mt-2 text-ink-2 text-sm">
+          Review what each interview surfaced and commit to a pick. The verdict comes next.
+        </p>
       </div>
 
       <RadioGroup value={selected} onValueChange={setSelected} className="space-y-4">
-        {candidates.map((candidate, i) => (
+        {candidates.map((candidate) => (
           <div key={candidate.id} className="relative">
             <RadioGroupItem value={candidate.id} id={candidate.id} className="peer sr-only" />
             <Label htmlFor={candidate.id} className="cursor-pointer block">
-              <Card className={`border-slate-200 shadow-sm transition-all ${selected === candidate.id ? 'border-indigo-500 ring-1 ring-indigo-500' : ''}`}>
+              <Card
+                className={`border-line bg-surface shadow-soft rounded-xl transition-all ${
+                  selected === candidate.id ? 'border-pine ring-1 ring-pine' : 'hover:border-ink-2/30'
+                }`}
+              >
                 <CardContent className="py-4 px-5 flex items-start gap-4">
-                  <Avatar className={`h-10 w-10 shrink-0 ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
-                    <AvatarFallback className={`text-sm font-semibold ${AVATAR_COLORS[i % AVATAR_COLORS.length]}`}>
+                  <Avatar className="h-10 w-10 shrink-0 rounded-xl bg-pine-soft border border-line">
+                    <AvatarFallback className="rounded-xl bg-pine-soft text-pine font-mono text-sm font-semibold">
                       {candidate.initials}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <p className="font-semibold text-slate-900 text-sm">{candidate.name}</p>
-                      <p className="text-xs text-slate-400">{candidate.role}</p>
+                      <p className="font-semibold text-ink text-sm">{candidate.name}</p>
+                      <p className="font-mono text-[11px] text-ink-2/70">{candidate.role}</p>
                     </div>
                     {summaries[candidate.id] ? (
-                      <SummaryNotes summary={summaries[candidate.id]} className="mt-1.5" />
+                      <SummaryNotes summary={summaries[candidate.id]} className="mt-2" />
                     ) : (
-                      <p className="text-sm text-slate-400 mt-1 italic">Not interviewed yet.</p>
+                      <p className="text-sm text-ink-2/60 mt-1 italic">Not interviewed yet.</p>
                     )}
                     {notes[candidate.id] && (
-                      <p className="text-xs text-slate-400 mt-2">Your notes: {notes[candidate.id]}</p>
+                      <p className="text-xs text-ink-2/70 mt-2">Your notes: {notes[candidate.id]}</p>
                     )}
                   </div>
                 </CardContent>
@@ -150,14 +149,16 @@ export default function DecisionPage() {
       </RadioGroup>
 
       <div className="mt-8 space-y-2">
-        <Label htmlFor="reasoning" className="text-slate-700">Your Reasoning</Label>
+        <Label htmlFor="reasoning" className="text-ink">
+          Your reasoning
+        </Label>
         <Textarea
           id="reasoning"
           placeholder="Why did you choose this candidate? What made them stand out?"
           value={reasoning}
           onChange={(e) => setReasoning(e.target.value)}
           rows={4}
-          className="border-slate-200 resize-none"
+          className="border-line resize-none px-3 py-2.5"
         />
       </div>
 
@@ -165,9 +166,9 @@ export default function DecisionPage() {
         <Button
           onClick={handleGetFeedback}
           disabled={!selected || loading}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white"
+          className="bg-pine hover:bg-pine/90 text-white"
         >
-          Get Feedback →
+          Reveal the verdict →
         </Button>
       </div>
     </div>
