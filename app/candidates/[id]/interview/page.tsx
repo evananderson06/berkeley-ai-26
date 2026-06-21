@@ -9,7 +9,7 @@ import { Candidate } from '@/types'
 import { cn } from '@/lib/utils'
 import { useVoiceInterview } from '@/lib/voice/useVoiceInterview'
 import { VOICE } from '@/lib/voice/config'
-import { CodingInterview } from '@/components/coding-interview'
+import { CodeEditor } from '@/components/code-editor'
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -34,7 +34,6 @@ export default function InterviewPage() {
   const [notes, setNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
   const [ending, setEnding] = useState(false)
-  const [codingMode, setCodingMode] = useState(false)
   const [typedMessage, setTypedMessage] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -44,7 +43,7 @@ export default function InterviewPage() {
     setCandidate(candidates.find((c) => c.id === candidateId) ?? null)
   }, [candidateId])
 
-  const { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop, sendTyped } =
+  const { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop, sendTyped, code, language } =
     useVoiceInterview({ candidate, candidateId })
 
   useEffect(() => {
@@ -98,11 +97,6 @@ export default function InterviewPage() {
     router.push('/candidates')
   }
 
-  function enterCodingMode() {
-    stop() // pause the voice pipeline while the candidate codes
-    setCodingMode(true)
-  }
-
   const active =
     status === 'connecting' || status === 'listening' || status === 'thinking' || status === 'speaking'
   const meterPct = Math.min(100, (level / 0.3) * 100)
@@ -134,17 +128,6 @@ export default function InterviewPage() {
             {STATUS_LABEL[status]}
           </span>
           <Button
-            onClick={() => (codingMode ? setCodingMode(false) : enterCodingMode())}
-            variant="outline"
-            size="sm"
-            className={cn(
-              'border-slate-200 hover:bg-slate-50',
-              codingMode ? 'text-indigo-700 border-indigo-200 bg-indigo-50' : 'text-slate-600'
-            )}
-          >
-            {codingMode ? '← Back to interview' : '💻 Coding question'}
-          </Button>
-          <Button
             onClick={endInterview}
             disabled={ending}
             variant="outline"
@@ -156,10 +139,7 @@ export default function InterviewPage() {
         </div>
       </div>
 
-      {/* Body: the coding panel when a coding question is in progress, else the voice transcript + notes */}
-      {codingMode && candidate ? (
-        <CodingInterview candidate={candidate} candidateId={candidateId} />
-      ) : (
+      {/* Body: voice transcript + always-on code editor + notes */}
       <div className="flex flex-1 overflow-hidden">
         {/* Transcript + voice controls */}
         <div className="flex flex-col flex-1 border-r border-slate-200">
@@ -284,8 +264,30 @@ export default function InterviewPage() {
           </div>
         </div>
 
+        {/* Code editor — always present; the candidate types here on coding questions */}
+        <div className="flex flex-col flex-1 min-w-[340px] border-r border-slate-200 bg-[#1e1e1e]">
+          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+            <span className="text-xs font-medium uppercase tracking-widest text-slate-400">
+              {language} · candidate editor
+            </span>
+            <span
+              className={cn(
+                'rounded px-2 py-0.5 text-[10px] font-medium',
+                status === 'thinking' && 'bg-amber-900/40 text-amber-300',
+                status === 'speaking' && 'bg-emerald-900/40 text-emerald-300',
+                status !== 'thinking' && status !== 'speaking' && 'bg-slate-800 text-slate-400'
+              )}
+            >
+              read-only
+            </span>
+          </div>
+          <div className="flex-1">
+            <CodeEditor value={code} language={language} />
+          </div>
+        </div>
+
         {/* Notes panel */}
-        <div className="w-80 shrink-0 flex flex-col bg-slate-50">
+        <div className="w-72 shrink-0 flex flex-col bg-slate-50">
           <div className="px-5 py-4 border-b border-slate-200">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Interview Notes</p>
           </div>
@@ -307,7 +309,6 @@ export default function InterviewPage() {
           </div>
         </div>
       </div>
-      )}
     </div>
   )
 }

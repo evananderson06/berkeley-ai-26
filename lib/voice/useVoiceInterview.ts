@@ -13,10 +13,29 @@ import { VOICE, VoiceState } from './config'
 import { createMic, MicController } from './mic'
 import { startStt, SttSession } from './stt'
 import { createTts, TtsController } from './tts'
+import { DelimiterParser } from '@/lib/coding/parser'
+import {
+  BASE_TYPING_DELAY_MS,
+  archetypeStyle,
+  deriveArchetype,
+  preferredLanguage,
+} from '@/lib/coding/persona'
 
 const SPEAKING_WATCHDOG_MS = 15000 // force back to listening if 'speaking' never ends
 const LLM_TIMEOUT_MS = 30000
 const TYPING_PLACEHOLDER = 'Sorry, I had trouble responding there. Could you repeat the question?'
+
+// Break a code chunk into "typing tokens" (words / whitespace runs / single
+// punctuation) so the per-token delay reads as a natural keyboard rhythm.
+function tokenizeCode(text: string): string[] {
+  return text.match(/\s+|\w+|[^\s\w]/g) ?? [text]
+}
+
+// Candidates narrate with stray newlines around the [SPEAK]/[CODE] delimiters;
+// collapse blank-line runs and trim so the chat bubble isn't full of gaps.
+function normalizeNarration(s: string): string {
+  return s.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '')
+}
 
 interface Args {
   candidate: Candidate | null
@@ -32,6 +51,9 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   const [level, setLevel] = useState(0)
   const [threshold, setThresholdState] = useState<number>(VOICE.THRESHOLD)
   const [error, setError] = useState<string | null>(null)
+  // Always-present coding editor: code the candidate "types" while they talk.
+  const [code, setCode] = useState('')
+  const [language, setLanguage] = useState('python')
 
   const statusRef = useRef<VoiceState>('idle')
   const messagesRef = useRef<Message[]>([])
@@ -49,8 +71,19 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   const aboveSinceRef = useRef<number | null>(null)
   const lastLevelPaintRef = useRef(0)
 
+  // Coding-stream plumbing (runs alongside voice).
+  const streamAbortRef = useRef<AbortController | null>(null)
+  const codeRef = useRef('')
+  const typeQueueRef = useRef<string[]>([])
+  const typeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const typingDelayRef = useRef(BASE_TYPING_DELAY_MS)
+
   useEffect(() => {
     candidateRef.current = candidate
+    if (candidate) {
+      setLanguage(preferredLanguage(candidate))
+      typingDelayRef.current = archetypeStyle(deriveArchetype(candidate)).typingDelayMs
+    }
   }, [candidate])
 
   // Load any existing transcript on mount so navigating in/out (or pausing) never wipes it.
@@ -96,6 +129,39 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
     setThresholdState(n)
   }, [])
 
+  const setCodeBoth = useCallback((updater: (prev: string) => string) => {
+    codeRef.current = updater(codeRef.current)
+    setCode(codeRef.current)
+  }, [])
+
+  // Reveal queued code one token per tick so it looks like live typing.
+  const pumpTyping = useCallback(() => {
+    if (typeTimerRef.current) return
+    const step = () => {
+      const tok = typeQueueRef.current.shift()
+      if (tok === undefined) {
+        typeTimerRef.current = null
+        return
+      }
+      setCodeBoth((prev) => prev + tok)
+      typeTimerRef.current = setTimeout(step, typingDelayRef.current)
+    }
+    typeTimerRef.current = setTimeout(step, typingDelayRef.current)
+  }, [setCodeBoth])
+
+  const stopTyping = useCallback(() => {
+    if (typeTimerRef.current) {
+      clearTimeout(typeTimerRef.current)
+      typeTimerRef.current = null
+    }
+    typeQueueRef.current = []
+  }, [])
+
+  // Stream the candidate's reply, splitting narration ([SPEAK] → chat + TTS)
+  // from code ([CODE] → the editor, typed at ~15ms/token). The persona/qualityTier
+  // prompt stays server-side. The current editor contents are sent as context and
+  // the editor is cleared so the new answer types in fresh (e.g. "now optimize it"
+  // rewrites the solution rather than appending below it).
   const sendToLLM = useCallback(
     async (userText: string, fallbackStatus: VoiceState = 'idle') => {
       const cand = candidateRef.current
@@ -103,51 +169,146 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       const mySession = sessionRef.current
       setStatus('thinking')
 
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS)
-      let reply: string | null = null
-      try {
-        const res = await fetch('/api/interview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ candidate: cand, messages: messagesRef.current, newMessage: userText }),
-          signal: ctrl.signal,
-        })
-        const data = await res.json()
-        reply = (data.reply || '').trim() || null
-      } catch (e) {
-        console.error('[voice] interview call failed', e)
-      } finally {
-        clearTimeout(timer)
+      const codeContext = codeRef.current
+      stopTyping()
+      codeRef.current = ''
+      setCode('')
+
+      // Add an empty assistant bubble we fill as narration streams in.
+      commitMessages([...messagesRef.current, { role: 'assistant', content: '', timestamp: now() }])
+      const assistantIdx = messagesRef.current.length - 1
+      const parser = new DelimiterParser()
+      let narration = ''
+
+      const updateNarration = (text: string) => {
+        narration += text
+        const next = messagesRef.current.slice()
+        next[assistantIdx] = { ...next[assistantIdx], content: normalizeNarration(narration) }
+        // Update ref+state directly (avoid re-persisting on every token).
+        messagesRef.current = next
+        setMessagesState(next)
       }
 
-      if (sessionRef.current !== mySession) return // interview was paused/stopped mid-flight
+      const consume = (segText: string, parserOut = parser.push(segText)) => {
+        for (const seg of parserOut) {
+          if (seg.channel === 'speak') updateNarration(seg.text)
+          else {
+            typeQueueRef.current.push(...tokenizeCode(seg.text))
+            pumpTyping()
+          }
+        }
+      }
 
-      if (!reply) reply = TYPING_PLACEHOLDER
-      commitMessages([...messagesRef.current, { role: 'assistant', content: reply, timestamp: now() }])
-      if (ttsRef.current) {
+      const ctrl = new AbortController()
+      streamAbortRef.current = ctrl
+      let timedOut = false
+      const timer = setTimeout(() => {
+        timedOut = true
+        ctrl.abort()
+      }, LLM_TIMEOUT_MS)
+      let failed = false
+      try {
+        const res = await fetch('/api/interview/code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            candidate: cand,
+            messages: messagesRef.current.slice(0, -1), // exclude the empty assistant bubble
+            newMessage: userText,
+            code: codeContext,
+            language,
+          }),
+          signal: ctrl.signal,
+        })
+        if (!res.body) throw new Error('No response body')
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let sse = ''
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          sse += decoder.decode(value, { stream: true })
+          const frames = sse.split('\n\n')
+          sse = frames.pop() ?? ''
+          for (const frame of frames) {
+            const line = frame.split('\n').find((l) => l.startsWith('data: '))
+            if (!line) continue
+            const payload = JSON.parse(line.slice(6))
+            if (payload.t) consume(payload.t)
+          }
+        }
+        consume('', parser.flush())
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') {
+          console.error('[voice] interview stream failed', e)
+          failed = true
+        }
+      } finally {
+        clearTimeout(timer)
+        if (streamAbortRef.current === ctrl) streamAbortRef.current = null
+      }
+
+      // Paused/stopped mid-flight, or a typed interruption (the caller starts the
+      // next turn): leave the partial in place and bail. A *timeout* abort is not
+      // a user action — fall through so we recover instead of hanging on 'thinking'.
+      if (sessionRef.current !== mySession) return
+      if (ctrl.signal.aborted && !timedOut) return
+
+      if ((failed || timedOut) && !narration.trim()) narration = TYPING_PLACEHOLDER
+      // Persist the finished turn (drop the bubble if the candidate said nothing,
+      // e.g. a pure-code answer with no narration).
+      const finalMsgs = messagesRef.current.slice()
+      if (!narration.trim()) finalMsgs.splice(assistantIdx, 1)
+      else finalMsgs[assistantIdx] = { ...finalMsgs[assistantIdx], content: normalizeNarration(narration) }
+      commitMessages(finalMsgs)
+
+      const spoken = normalizeNarration(narration).trim()
+      if (ttsRef.current && spoken) {
         setStatus('speaking')
-        ttsRef.current.speak(reply)
+        ttsRef.current.speak(spoken)
       } else {
         setStatus(fallbackStatus)
       }
     },
-    [commitMessages, setStatus]
+    [commitMessages, language, pumpTyping, setStatus, stopTyping]
   )
 
   const sendTyped = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
-      if (!trimmed || !candidateRef.current || processingRef.current) return
-      processingRef.current = true
+      if (!trimmed || !candidateRef.current) return
       const prevStatus = statusRef.current
-      if (prevStatus === 'speaking') ttsRef.current?.stop()
+
+      // Mid-stream interruption: cancel the candidate's in-flight answer, keep
+      // whatever they'd said/typed so far, then resume with the new message.
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort()
+        streamAbortRef.current = null
+        if (typeTimerRef.current) {
+          clearTimeout(typeTimerRef.current)
+          typeTimerRef.current = null
+        }
+        if (typeQueueRef.current.length) {
+          const rest = typeQueueRef.current.join('')
+          typeQueueRef.current = []
+          setCodeBoth((prev) => prev + rest)
+        }
+        commitMessages(messagesRef.current.filter((m) => m.content.trim()))
+      } else if (processingRef.current) {
+        return
+      }
+
+      ttsRef.current?.stop()
+      processingRef.current = true
       commitMessages([...messagesRef.current, { role: 'user', content: trimmed, timestamp: now() }])
       await sendToLLM(trimmed, prevStatus === 'speaking' ? 'listening' : prevStatus).finally(() => {
-        processingRef.current = false
+        // Only release if this turn wasn't superseded by an interruption (whose
+        // new stream owns streamAbortRef); otherwise let the newer turn clear it.
+        if (streamAbortRef.current === null) processingRef.current = false
       })
     },
-    [commitMessages, sendToLLM]
+    [commitMessages, sendToLLM, setCodeBoth]
   )
 
   const commitTurn = useCallback(() => {
@@ -159,7 +320,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
     setInterim('')
     commitMessages([...messagesRef.current, { role: 'user', content: text, timestamp: now() }])
     void sendToLLM(text).finally(() => {
-      processingRef.current = false
+      if (streamAbortRef.current === null) processingRef.current = false
     })
   }, [commitMessages, sendToLLM])
 
@@ -277,6 +438,9 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   const teardown = useCallback(
     (next: VoiceState) => {
       sessionRef.current++ // invalidate in-flight async work
+      streamAbortRef.current?.abort()
+      streamAbortRef.current = null
+      stopTyping()
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
       micRef.current?.close()
@@ -291,7 +455,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       setInterim('')
       setStatus(next)
     },
-    [setStatus]
+    [setStatus, stopTyping]
   )
 
   const pause = useCallback(() => teardown('paused'), [teardown]) // → button shows "Resume"
@@ -308,5 +472,19 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
 
   useEffect(() => () => stop(), [stop])
 
-  return { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop, sendTyped }
+  return {
+    status,
+    messages,
+    interim,
+    level,
+    threshold,
+    setThreshold,
+    error,
+    start,
+    pause,
+    stop,
+    sendTyped,
+    code,
+    language,
+  }
 }
