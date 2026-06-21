@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils'
 import { useVoiceInterview } from '@/lib/voice/useVoiceInterview'
 import { VOICE } from '@/lib/voice/config'
 import { CodeEditor } from '@/components/code-editor'
+import { Dialog } from '@/components/ui/dialog'
+import { ResumeDisplay } from '@/components/resume-templates'
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -35,6 +37,7 @@ export default function InterviewPage() {
   const [notesSaved, setNotesSaved] = useState(false)
   const [ending, setEnding] = useState(false)
   const [typedMessage, setTypedMessage] = useState('')
+  const [resumeOpen, setResumeOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -126,6 +129,15 @@ export default function InterviewPage() {
             {muted ? '🔇 Mic muted' : STATUS_LABEL[status]}
           </span>
           <Button
+            onClick={() => setResumeOpen(true)}
+            disabled={!candidate}
+            variant="outline"
+            size="sm"
+            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
+            View résumé
+          </Button>
+          <Button
             onClick={endInterview}
             disabled={ending}
             variant="outline"
@@ -136,6 +148,14 @@ export default function InterviewPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={resumeOpen}
+        onClose={() => setResumeOpen(false)}
+        title={candidate ? `${candidate.name} · résumé` : 'Résumé'}
+      >
+        {candidate && <ResumeDisplay candidate={candidate} />}
+      </Dialog>
 
       {/* Body: voice transcript + always-on code editor + notes */}
       <div className="flex flex-1 overflow-hidden">
