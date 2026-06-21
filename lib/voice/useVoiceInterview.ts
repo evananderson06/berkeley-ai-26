@@ -16,6 +16,7 @@ import { createTts, TtsController } from './tts'
 
 const SPEAKING_WATCHDOG_MS = 15000 // force back to listening if 'speaking' never ends
 const LLM_TIMEOUT_MS = 30000
+const TYPING_PLACEHOLDER = 'Sorry, I had trouble responding there. Could you repeat the question?'
 
 interface Args {
   candidate: Candidate | null
@@ -96,7 +97,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   }, [])
 
   const sendToLLM = useCallback(
-    async (userText: string) => {
+    async (userText: string, fallbackStatus: VoiceState = 'idle') => {
       const cand = candidateRef.current
       if (!cand) return
       const mySession = sessionRef.current
@@ -122,12 +123,31 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
 
       if (sessionRef.current !== mySession) return // interview was paused/stopped mid-flight
 
-      if (!reply) reply = 'Sorry, I had trouble responding there. Could you repeat the question?'
+      if (!reply) reply = TYPING_PLACEHOLDER
       commitMessages([...messagesRef.current, { role: 'assistant', content: reply, timestamp: now() }])
-      setStatus('speaking')
-      ttsRef.current?.speak(reply)
+      if (ttsRef.current) {
+        setStatus('speaking')
+        ttsRef.current.speak(reply)
+      } else {
+        setStatus(fallbackStatus)
+      }
     },
     [commitMessages, setStatus]
+  )
+
+  const sendTyped = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed || !candidateRef.current || processingRef.current) return
+      processingRef.current = true
+      const prevStatus = statusRef.current
+      if (prevStatus === 'speaking') ttsRef.current?.stop()
+      commitMessages([...messagesRef.current, { role: 'user', content: trimmed, timestamp: now() }])
+      await sendToLLM(trimmed, prevStatus === 'speaking' ? 'listening' : prevStatus).finally(() => {
+        processingRef.current = false
+      })
+    },
+    [commitMessages, sendToLLM]
   )
 
   const commitTurn = useCallback(() => {
@@ -288,5 +308,5 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
 
   useEffect(() => () => stop(), [stop])
 
-  return { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop }
+  return { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop, sendTyped }
 }

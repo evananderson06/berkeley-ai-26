@@ -33,6 +33,7 @@ export default function InterviewPage() {
   const [notes, setNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
   const [ending, setEnding] = useState(false)
+  const [typedMessage, setTypedMessage] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function InterviewPage() {
     setCandidate(candidates.find((c) => c.id === candidateId) ?? null)
   }, [candidateId])
 
-  const { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop } =
+  const { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop, sendTyped } =
     useVoiceInterview({ candidate, candidateId })
 
   useEffect(() => {
@@ -57,6 +58,20 @@ export default function InterviewPage() {
     })
     setNotesSaved(true)
     setTimeout(() => setNotesSaved(false), 2000)
+  }
+
+  async function handleSendTyped() {
+    if (!typedMessage.trim() || ending) return
+    const text = typedMessage
+    setTypedMessage('')
+    await sendTyped(text)
+  }
+
+  function handleTypedKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void handleSendTyped()
+    }
   }
 
   async function endInterview() {
@@ -224,6 +239,27 @@ export default function InterviewPage() {
               resume any time without losing the conversation. Default threshold {VOICE.THRESHOLD}; lower with
               headphones, raise on open speakers.
             </p>
+          </div>
+
+          {/* Text input bar */}
+          <div className="border-t border-slate-200 bg-white px-4 py-3 flex gap-2 items-end">
+            <Textarea
+              value={typedMessage}
+              onChange={(e) => setTypedMessage(e.target.value)}
+              onKeyDown={handleTypedKeyDown}
+              placeholder="Type a question… (Enter to send, Shift+Enter for newline)"
+              rows={1}
+              disabled={ending || !candidate}
+              className="flex-1 resize-none text-sm min-h-[36px] max-h-32 py-2"
+            />
+            <Button
+              onClick={handleSendTyped}
+              disabled={!typedMessage.trim() || ending || !candidate}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+              size="sm"
+            >
+              Send
+            </Button>
           </div>
         </div>
 
