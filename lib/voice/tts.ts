@@ -90,7 +90,9 @@ export function createTts(
         nextStart = audioCtx.currentTime + VOICE.PLAYBACK_LEAD_S // jitter headroom on first chunk
         cbs.onSpeakingStart?.()
       }
-      nextStart = Math.max(audioCtx.currentTime, nextStart)
+      // If we've fallen behind (underrun), don't just snap to "now" with zero slack —
+      // that leaves us gap-prone for the rest of the reply. Rebuild the jitter buffer.
+      if (nextStart < audioCtx.currentTime) nextStart = audioCtx.currentTime + VOICE.PLAYBACK_LEAD_S
       src.start(nextStart)
       nextStart += buffer.duration / VOICE.SPEECH_RATE // sped-up chunk plays for less time
       sources.add(src)

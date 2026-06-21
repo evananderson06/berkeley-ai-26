@@ -38,7 +38,10 @@ export const VOICE = {
     'aura-2-mars-en',
   ],
   TTS_SAMPLE_RATE: 24000, // linear16 mono; playback AudioBuffers use this rate
-  PLAYBACK_LEAD_S: 0.08, // jitter headroom before the first audio chunk of a reply
+  // Jitter buffer: how far ahead the first chunk of a reply is scheduled. This is
+  // the slack that absorbs uneven chunk arrival at the start (too small ⇒ stutter,
+  // especially when SPEECH_RATE drains the queue faster than real time).
+  PLAYBACK_LEAD_S: 0.2,
   // Playback speed for the candidate's voice. Aura has no native rate param, so we
   // speed up the PCM via AudioBufferSourceNode.playbackRate (raises pitch a touch;
   // keep ≲1.25 to stay natural). Code-typing sync scales with this automatically.
