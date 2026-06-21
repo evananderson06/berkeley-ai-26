@@ -83,6 +83,7 @@ export function createTts(
       buffer.getChannelData(0).set(f32)
       const src = audioCtx.createBufferSource()
       src.buffer = buffer
+      src.playbackRate.value = VOICE.SPEECH_RATE // faster speech (Aura has no rate param)
       src.connect(audioCtx.destination)
       if (!active) {
         active = true
@@ -91,7 +92,7 @@ export function createTts(
       }
       nextStart = Math.max(audioCtx.currentTime, nextStart)
       src.start(nextStart)
-      nextStart += buffer.duration
+      nextStart += buffer.duration / VOICE.SPEECH_RATE // sped-up chunk plays for less time
       sources.add(src)
       src.onended = () => {
         sources.delete(src)

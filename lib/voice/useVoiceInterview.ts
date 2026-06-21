@@ -255,7 +255,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
               ttsRef.current?.feed(clause)
               fedAny = true
             }
-            speechBusyUntil = performance.now() + estimateSpeechMs(a.text)
+            speechBusyUntil = performance.now() + estimateSpeechMs(a.text, VOICE.SPEECH_RATE)
           } else if (a.kind === 'type') {
             const span = Math.max(0, speechBusyUntil - performance.now())
             await typeBetween(codeRef.current, a.text, '', span)

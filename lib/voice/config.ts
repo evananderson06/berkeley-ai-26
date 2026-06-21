@@ -39,6 +39,10 @@ export const VOICE = {
   ],
   TTS_SAMPLE_RATE: 24000, // linear16 mono; playback AudioBuffers use this rate
   PLAYBACK_LEAD_S: 0.08, // jitter headroom before the first audio chunk of a reply
+  // Playback speed for the candidate's voice. Aura has no native rate param, so we
+  // speed up the PCM via AudioBufferSourceNode.playbackRate (raises pitch a touch;
+  // keep ≲1.25 to stay natural). Code-typing sync scales with this automatically.
+  SPEECH_RATE: 1.2,
 
   // ── Browser WS auth ───────────────────────────────────────────────────────
   // We connect directly to Deepgram from the browser, authenticating via the
