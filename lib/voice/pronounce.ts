@@ -20,11 +20,11 @@ function speakExponents(text: string): string {
     })
 }
 
-// Big-O notation: "O(n)" → "big O of n", "O(log n)" → "big O of log n".
+// Big-O notation: "O(n)" → "O of n", "O(log n)" → "O of log n".
 // The capital O with a word boundary avoids matching the middle of words like
 // "FOO(x)". Exponents inside have already been spoken out by the time we wrap.
 function speakBigO(text: string): string {
-  return text.replace(/\bO\s*\(([^()]+)\)/g, (_m, inner: string) => `big O of ${inner.trim()}`)
+  return text.replace(/\bO\s*\(([^()]+)\)/g, (_m, inner: string) => `O of ${inner.trim()}`)
 }
 
 // Dotted identifiers: "a.b" / "obj.method" / "main.py" → "a dot b", etc.
