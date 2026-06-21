@@ -12,6 +12,7 @@ import { VOICE } from '@/lib/voice/config'
 import { CodeEditor } from '@/components/code-editor'
 import { Dialog } from '@/components/ui/dialog'
 import { ResumeDisplay } from '@/components/resume-templates'
+import { LoadingScreen } from '@/components/loading-screen'
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -36,6 +37,8 @@ export default function InterviewPage() {
   const [notes, setNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
   const [ending, setEnding] = useState(false)
+  const [generatingSummary, setGeneratingSummary] = useState(false)
+  const [summaryProgress, setSummaryProgress] = useState(0)
   const [typedMessage, setTypedMessage] = useState('')
   const [resumeOpen, setResumeOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -52,6 +55,16 @@ export default function InterviewPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, interim])
+
+  // Creep the summary progress bar toward 90% while we wait on the API (there's no
+  // real progress signal); endInterview snaps it to 100 before navigating.
+  useEffect(() => {
+    if (!generatingSummary) return
+    const id = setInterval(() => {
+      setSummaryProgress((p) => (p < 90 ? p + Math.max(1, (90 - p) * 0.08) : p))
+    }, 200)
+    return () => clearInterval(id)
+  }, [generatingSummary])
 
   async function saveNotes() {
     localStorage.setItem(`interviewiq_notes_${candidateId}`, notes)
@@ -84,6 +97,8 @@ export default function InterviewPage() {
     stop()
     const hadTurns = messages.some((m) => m.role === 'user')
     if (hadTurns && candidate) {
+      setGeneratingSummary(true) // show the loading screen while the summary is written
+      setSummaryProgress(8)
       try {
         localStorage.setItem(`interviewiq_completed_${candidateId}`, 'true')
         const res = await fetch('/api/interview-summary', {
@@ -96,12 +111,16 @@ export default function InterviewPage() {
       } catch {
         /* still navigate — candidate is marked completed even if summary failed */
       }
+      setSummaryProgress(100)
     }
     router.push('/candidates')
   }
 
   const meterPct = Math.min(100, (level / 0.3) * 100)
   const markerPct = Math.min(100, (threshold / 0.3) * 100)
+
+  if (generatingSummary)
+    return <LoadingScreen message="Writing up the interview summary…" progress={summaryProgress} />
 
   return (
     <div className="flex flex-col h-[calc(100vh-56px)]">
