@@ -123,32 +123,32 @@ export default function InterviewPage() {
     return <LoadingScreen message="Writing up the interview summary…" progress={summaryProgress} />
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)]">
+    <div className="flex flex-col h-[calc(100vh-56px)] bg-ground">
       {/* Header */}
-      <div className="border-b border-slate-200 bg-white px-6 py-3 flex items-center justify-between shrink-0">
+      <div className="border-b border-line bg-surface px-6 py-3 flex items-center justify-between shrink-0">
         <div>
-          <p className="font-semibold text-slate-900 text-sm">{candidate?.name ?? '…'}</p>
-          <p className="text-xs text-slate-400">
-            {candidate?.role} · {candidate?.yearsExperience} yrs exp
+          <p className="font-semibold text-ink text-sm">{candidate?.name ?? '…'}</p>
+          <p className="font-mono text-[11px] text-ink-2/70">
+            {candidate?.role} · {candidate?.yearsExperience} yrs
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span
             className={cn(
-              'text-xs font-medium px-2 py-1 rounded',
-              muted && 'bg-red-50 text-red-700',
-              !muted && status === 'listening' && 'bg-emerald-50 text-emerald-700',
-              !muted && status === 'speaking' && 'bg-indigo-50 text-indigo-700',
-              !muted && status === 'thinking' && 'bg-amber-50 text-amber-700',
-              !muted && status === 'connecting' && 'bg-slate-100 text-slate-500',
-              !muted && status === 'error' && 'bg-red-50 text-red-700',
-              !muted && status === 'idle' && 'bg-slate-100 text-slate-400'
+              'font-mono text-[11px] uppercase tracking-[0.1em] px-2.5 py-1 rounded-full border',
+              muted && 'bg-bad/10 text-bad border-bad/25',
+              !muted && status === 'listening' && 'bg-pine-soft text-pine border-pine/20',
+              !muted && status === 'speaking' && 'bg-brass-soft text-brass border-brass/25',
+              !muted && status === 'thinking' && 'bg-surface-2 text-ink-2 border-line',
+              !muted && status === 'connecting' && 'bg-surface-2 text-ink-2 border-line',
+              !muted && status === 'error' && 'bg-bad/10 text-bad border-bad/25',
+              !muted && status === 'idle' && 'bg-surface-2 text-ink-2/60 border-line'
             )}
           >
             {muted ? '🔇 Mic muted' : STATUS_LABEL[status]}
           </span>
           <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs text-slate-500">Transcript</span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-2">Transcript</span>
             <button
               type="button"
               role="switch"
@@ -157,12 +157,12 @@ export default function InterviewPage() {
               onClick={() => setShowTranscript((v) => !v)}
               className={cn(
                 'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-                showTranscript ? 'bg-indigo-600' : 'bg-slate-300'
+                showTranscript ? 'bg-pine' : 'bg-line'
               )}
             >
               <span
                 className={cn(
-                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  'inline-block h-4 w-4 transform rounded-full bg-surface shadow transition-transform',
                   showTranscript ? 'translate-x-4' : 'translate-x-0.5'
                 )}
               />
@@ -173,7 +173,7 @@ export default function InterviewPage() {
             disabled={!candidate}
             variant="outline"
             size="sm"
-            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="border-line text-ink-2 hover:bg-surface-2 hover:text-ink"
           >
             View résumé
           </Button>
@@ -182,9 +182,9 @@ export default function InterviewPage() {
             disabled={ending}
             variant="outline"
             size="sm"
-            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="border-line text-ink-2 hover:bg-surface-2 hover:text-ink"
           >
-            {ending ? 'Ending…' : 'End Interview'}
+            {ending ? 'Ending…' : 'End interview'}
           </Button>
         </div>
       </div>
@@ -200,7 +200,7 @@ export default function InterviewPage() {
       {/* Body: voice transcript + always-on code editor + notes */}
       <div className="flex flex-1 overflow-hidden">
         {/* Voice call experience (transcript hidden by default; toggle in header) */}
-        <div className="flex flex-col flex-1 border-r border-slate-200">
+        <div className="flex flex-col flex-1 border-r border-line">
           {showTranscript ? (
             /* Transcript view */
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
@@ -208,17 +208,17 @@ export default function InterviewPage() {
                 <div key={i} className={cn('flex gap-3', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
                   <div
                     className={cn(
-                      'max-w-[70%] rounded-xl px-4 py-2.5 text-sm leading-relaxed',
+                      'max-w-[70%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
                       msg.role === 'user'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-white border border-slate-200 text-slate-800'
+                        ? 'bg-pine text-white rounded-br-md'
+                        : 'bg-surface border border-line text-ink rounded-bl-md'
                     )}
                   >
                     {msg.content}
                     <p
                       className={cn(
-                        'text-[10px] mt-1',
-                        msg.role === 'user' ? 'text-indigo-200' : 'text-slate-400'
+                        'font-mono text-[10px] mt-1.5',
+                        msg.role === 'user' ? 'text-white/55' : 'text-ink-2/55'
                       )}
                     >
                       {formatTime(msg.timestamp)}
@@ -229,7 +229,7 @@ export default function InterviewPage() {
 
               {interim && (
                 <div className="flex gap-3 flex-row-reverse">
-                  <div className="max-w-[70%] rounded-xl px-4 py-2.5 text-sm leading-relaxed bg-indigo-50 text-indigo-400 italic">
+                  <div className="max-w-[70%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed bg-pine/10 text-pine/70 italic">
                     {interim}
                   </div>
                 </div>
@@ -237,8 +237,8 @@ export default function InterviewPage() {
 
               {status === 'thinking' && (
                 <div className="flex gap-3">
-                  <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5">
-                    <span className="text-slate-400 text-sm">Thinking…</span>
+                  <div className="bg-surface border border-line rounded-2xl rounded-bl-md px-4 py-2.5">
+                    <span className="text-ink-2 text-sm">Thinking…</span>
                   </div>
                 </div>
               )}
@@ -246,34 +246,34 @@ export default function InterviewPage() {
             </div>
           ) : (
             /* Voice-call view */
-            <div className="flex-1 flex flex-col items-center justify-center gap-8 bg-gradient-to-b from-slate-50 to-slate-100">
+            <div className="flex-1 flex flex-col items-center justify-center gap-8 bg-gradient-to-b from-surface-2 to-ground">
               <div className="relative flex h-48 w-48 items-center justify-center">
                 {/* Candidate speaking → expanding pulse rings */}
                 {!muted && status === 'speaking' && (
                   <>
-                    <span className="absolute h-44 w-44 rounded-full bg-indigo-400/20 animate-ping" />
-                    <span className="absolute h-36 w-36 rounded-full bg-indigo-400/30 animate-pulse" />
+                    <span className="absolute h-44 w-44 rounded-full bg-brass/20 animate-ping" />
+                    <span className="absolute h-36 w-36 rounded-full bg-brass/30 animate-pulse" />
                   </>
                 )}
                 {/* Interviewer talking → glow that grows with mic level */}
                 {!muted && status === 'listening' && (
                   <span
-                    className="absolute h-44 w-44 rounded-full bg-emerald-400/20 transition-transform duration-100"
+                    className="absolute h-44 w-44 rounded-full bg-pine/20 transition-transform duration-100"
                     style={{ transform: `scale(${0.7 + Math.min(level / 0.3, 1) * 0.5})` }}
                   />
                 )}
                 <div
                   className={cn(
-                    'relative flex h-32 w-32 items-center justify-center rounded-full text-4xl font-semibold text-white shadow-xl ring-4 transition-colors',
-                    muted && 'bg-gradient-to-br from-slate-400 to-slate-600 ring-slate-200',
-                    !muted && status === 'speaking' && 'bg-gradient-to-br from-indigo-500 to-indigo-700 ring-indigo-200',
-                    !muted && status === 'listening' && 'bg-gradient-to-br from-emerald-500 to-emerald-700 ring-emerald-200',
-                    !muted && status === 'thinking' && 'bg-gradient-to-br from-amber-500 to-amber-600 ring-amber-200',
+                    'relative flex h-32 w-32 items-center justify-center rounded-full font-display text-4xl font-semibold text-white shadow-lift ring-4 transition-colors',
+                    muted && 'bg-gradient-to-br from-[#7d8a83] to-ink-2 ring-line',
+                    !muted && status === 'speaking' && 'bg-gradient-to-br from-brass to-[#9a6a1f] ring-brass-soft',
+                    !muted && status === 'listening' && 'bg-gradient-to-br from-pine to-[#0a3a30] ring-pine-soft',
+                    !muted && status === 'thinking' && 'bg-gradient-to-br from-[#7d8a83] to-ink-2 ring-line',
                     !muted &&
                       status !== 'speaking' &&
                       status !== 'listening' &&
                       status !== 'thinking' &&
-                      'bg-gradient-to-br from-slate-400 to-slate-600 ring-slate-200'
+                      'bg-gradient-to-br from-[#7d8a83] to-ink-2 ring-line'
                   )}
                 >
                   {candidate?.initials ?? '…'}
@@ -281,34 +281,34 @@ export default function InterviewPage() {
               </div>
 
               <div className="text-center space-y-1.5">
-                <p className="text-xl font-semibold text-slate-900">{candidate?.name ?? 'Connecting…'}</p>
+                <p className="font-display text-2xl text-ink">{candidate?.name ?? 'Connecting…'}</p>
                 {candidate && (
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-ink-2">
                     {candidate.role} · {candidate.yearsExperience} yrs exp
                   </p>
                 )}
-                <p className="text-sm font-medium text-slate-400 pt-1">
+                <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-ink-2/70 pt-1">
                   {muted ? '🔇 Mic muted' : STATUS_LABEL[status]}
                 </p>
               </div>
 
-              <p className="text-[11px] text-slate-400 max-w-xs text-center px-4">
-                Voice is always on — just talk. Toggle <span className="font-medium">Transcript</span> in the
-                header to read the conversation.
+              <p className="font-mono text-[10px] text-ink-2/60 max-w-xs text-center px-4 leading-relaxed">
+                Voice is always on — just talk. Toggle <span className="font-medium text-ink-2">Transcript</span> in
+                the header to read the conversation.
               </p>
             </div>
           )}
 
           {/* Voice control bar (shared by both views) */}
-          <div className="border-t border-slate-200 bg-white px-4 py-3 space-y-3">
-            {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="border-t border-line bg-surface px-4 py-3 space-y-3">
+            {error && <p className="text-xs text-bad">{error}</p>}
 
             <div className="flex items-center gap-4">
               {status === 'error' ? (
                 <Button
                   onClick={() => start()}
                   disabled={!candidate || ending}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 rounded-full h-12 w-12 p-0 text-lg"
+                  className="bg-pine hover:bg-pine/90 text-white shrink-0 rounded-full h-12 w-12 p-0 text-lg"
                   title="Enable microphone"
                 >
                   🎙
@@ -320,7 +320,7 @@ export default function InterviewPage() {
                   title={muted ? 'Unmute mic' : 'Mute mic'}
                   className={cn(
                     'text-white shrink-0 rounded-full h-12 w-12 p-0 text-lg',
-                    muted ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                    muted ? 'bg-bad hover:bg-bad/90' : 'bg-pine hover:bg-pine/90'
                   )}
                 >
                   {muted ? '🔇' : '🎙'}
@@ -328,22 +328,22 @@ export default function InterviewPage() {
               )}
 
               <div className="flex-1">
-                <div className="relative h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className="relative h-2 rounded-full bg-surface-2 border border-line overflow-hidden">
                   <div
                     className={cn(
                       'h-full transition-[width] duration-75',
-                      level > threshold ? 'bg-emerald-500' : 'bg-slate-300'
+                      level > threshold ? 'bg-brass' : 'bg-line'
                     )}
                     style={{ width: `${meterPct}%` }}
                   />
                   <div
-                    className="absolute top-[-2px] h-3 w-0.5 bg-red-500"
+                    className="absolute top-[-3px] h-3.5 w-0.5 bg-bad"
                     style={{ left: `${markerPct}%` }}
                     title="Barge-in threshold"
                   />
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 w-28">Barge-in threshold</span>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink-2/70 w-28">Barge-in level</span>
                   <input
                     type="range"
                     min={0.01}
@@ -351,9 +351,9 @@ export default function InterviewPage() {
                     step={0.005}
                     value={threshold}
                     onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                    className="flex-1"
+                    className="flex-1 accent-pine"
                   />
-                  <span className="text-[10px] text-slate-400 w-10 text-right">{threshold.toFixed(3)}</span>
+                  <span className="font-mono text-[10px] text-ink-2/70 w-10 text-right">{threshold.toFixed(3)}</span>
                 </div>
               </div>
             </div>
@@ -361,7 +361,7 @@ export default function InterviewPage() {
 
           {/* Text input bar — only useful alongside the transcript */}
           {showTranscript && (
-            <div className="border-t border-slate-200 bg-white px-4 py-3 flex gap-2 items-end">
+            <div className="border-t border-line bg-surface px-4 py-3 flex gap-2 items-end">
               <Textarea
                 value={typedMessage}
                 onChange={(e) => setTypedMessage(e.target.value)}
@@ -369,12 +369,12 @@ export default function InterviewPage() {
                 placeholder="Type a question… (Enter to send, Shift+Enter for newline)"
                 rows={1}
                 disabled={ending || !candidate}
-                className="flex-1 resize-none text-sm min-h-[36px] max-h-32 py-2"
+                className="flex-1 resize-none text-sm min-h-[36px] max-h-32 py-2 border-line"
               />
               <Button
                 onClick={handleSendTyped}
                 disabled={!typedMessage.trim() || ending || !candidate}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+                className="bg-pine hover:bg-pine/90 text-white shrink-0"
                 size="sm"
               >
                 Send
@@ -384,17 +384,17 @@ export default function InterviewPage() {
         </div>
 
         {/* Code editor — always present; the candidate types here on coding questions */}
-        <div className="flex flex-col flex-1 min-w-[340px] border-r border-slate-200 bg-[#1e1e1e]">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-            <span className="text-xs font-medium uppercase tracking-widest text-slate-400">
+        <div className="flex flex-col flex-1 min-w-[340px] border-r border-line bg-ink">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-white/50">
               {language} · candidate editor
             </span>
             <span
               className={cn(
-                'rounded px-2 py-0.5 text-[10px] font-medium',
-                status === 'thinking' && 'bg-amber-900/40 text-amber-300',
-                status === 'speaking' && 'bg-emerald-900/40 text-emerald-300',
-                status !== 'thinking' && status !== 'speaking' && 'bg-slate-800 text-slate-400'
+                'rounded px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider',
+                status === 'thinking' && 'bg-brass/20 text-brass',
+                status === 'speaking' && 'bg-good/25 text-[#9FE3C0]',
+                status !== 'thinking' && status !== 'speaking' && 'bg-white/10 text-white/45'
               )}
             >
               read-only
@@ -406,24 +406,24 @@ export default function InterviewPage() {
         </div>
 
         {/* Notes panel */}
-        <div className="w-72 shrink-0 flex flex-col bg-slate-50">
-          <div className="px-5 py-4 border-b border-slate-200">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Interview Notes</p>
+        <div className="w-72 shrink-0 flex flex-col bg-surface-2">
+          <div className="px-5 py-4 border-b border-line">
+            <p className="font-mono text-[10px] font-semibold text-ink-2 uppercase tracking-[0.16em]">Interview notes</p>
           </div>
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Jot down observations, red flags, follow-up questions…"
-            className="flex-1 resize-none border-0 rounded-none bg-transparent text-sm text-slate-700 focus-visible:ring-0 p-5"
+            className="flex-1 resize-none border-0 rounded-none bg-transparent text-sm text-ink focus-visible:ring-0 p-5"
           />
-          <div className="px-5 py-3 border-t border-slate-200">
+          <div className="px-5 py-3 border-t border-line">
             <Button
               onClick={saveNotes}
               variant="outline"
               size="sm"
-              className="w-full border-slate-200 text-slate-700 hover:bg-white"
+              className="w-full border-line text-ink hover:bg-surface"
             >
-              {notesSaved ? 'Saved ✓' : 'Save Notes'}
+              {notesSaved ? 'Saved ✓' : 'Save notes'}
             </Button>
           </div>
         </div>

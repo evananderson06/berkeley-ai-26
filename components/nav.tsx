@@ -26,10 +26,15 @@ export function Nav() {
   const activeStep = getActiveStep(pathname)
 
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="sticky top-0 z-40 border-b border-line bg-surface/85 backdrop-blur">
       <div className="mx-auto max-w-7xl px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="text-lg font-semibold text-slate-900 tracking-tight">
-          Interview<span className="text-indigo-600">IQ</span>
+        <Link href="/" className="group flex items-center gap-2">
+          <span className="relative flex h-5 w-5 items-center justify-center rounded-[5px] bg-pine">
+            <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-brass" />
+          </span>
+          <span className="text-lg font-semibold tracking-tight text-ink">
+            Interview<span className="text-pine">IQ</span>
+          </span>
         </Link>
 
         <nav className="flex items-center gap-1">
@@ -40,18 +45,16 @@ export function Nav() {
               <div key={step.label} className="flex items-center">
                 <span
                   className={cn(
-                    'px-3 py-1 rounded text-xs font-medium transition-colors',
-                    isActive && 'bg-indigo-50 text-indigo-700',
-                    isComplete && 'text-slate-400',
-                    !isActive && !isComplete && 'text-slate-400'
+                    'px-2.5 py-1 rounded-md font-mono text-[11px] uppercase tracking-[0.1em] transition-colors',
+                    isActive && 'bg-pine-soft text-pine',
+                    isComplete && 'text-ink-2',
+                    !isActive && !isComplete && 'text-ink-2/45'
                   )}
                 >
-                  {isComplete && <span className="mr-1">✓</span>}
+                  {isComplete && <span className="mr-1 text-good">✓</span>}
                   {step.label}
                 </span>
-                {i < STEPS.length - 1 && (
-                  <span className="mx-1 text-slate-300 text-xs">›</span>
-                )}
+                {i < STEPS.length - 1 && <span className="mx-0.5 text-line">›</span>}
               </div>
             )
           })}

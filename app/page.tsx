@@ -118,57 +118,62 @@ export default function HomePage() {
   if (loading) return <LoadingScreen message={loadingMessage} progress={loadingProgress} />
 
   return (
-    <div className="flex min-h-[calc(100vh-56px)] items-center justify-center px-4">
-      <div className="w-full max-w-lg">
+    <div className="flex min-h-[calc(100vh-56px)] items-center justify-center px-4 py-12">
+      <div className="w-full max-w-lg animate-reveal-up">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
-            Interview<span className="text-indigo-600">IQ</span>
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-pine mb-4">AI hiring simulator</p>
+          <h1 className="font-display text-4xl sm:text-[44px] leading-[1.06] tracking-tight text-ink">
+            Interview the candidates.
+            <br />
+            Learn who you <em className="italic text-pine">should</em> hire.
           </h1>
-          <p className="mt-2 text-slate-500 text-sm">
-            Enter a role to generate AI candidates and practice your interviewing skills.
+          <p className="mt-5 text-ink-2 text-[15px] max-w-md mx-auto leading-relaxed">
+            Enter a role and we&apos;ll generate realistic candidates to interview by voice or text — then show you
+            who you should have picked, and what you missed.
           </p>
         </div>
 
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base font-semibold text-slate-800">New Interview Session</CardTitle>
-            <CardDescription className="text-slate-500 text-sm">
-              We&apos;ll create 5 realistic candidates — one standout, a few middle-of-the-pack, and one to test your judgment.
+        <Card className="bg-surface shadow-soft rounded-xl">
+          <CardHeader className="px-7 pt-7 pb-5">
+            <CardTitle className="text-base font-semibold text-ink">New session</CardTitle>
+            <CardDescription className="text-ink-2 text-sm leading-relaxed">
+              We&apos;ll create 5 realistic candidates — one standout, a few middle-of-the-pack, and one to test your
+              judgment.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-7 pb-7">
             <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-1.5">
-                <Label htmlFor="jobTitle" className="text-slate-700">Job Title</Label>
+              <div className="space-y-2">
+                <Label htmlFor="jobTitle" className="text-ink">
+                  Job title
+                </Label>
                 <Input
                   id="jobTitle"
                   placeholder="e.g. Senior Software Engineer"
                   value={jobTitle}
                   onChange={(e) => setJobTitle(e.target.value)}
-                  className="border-slate-200 focus:ring-indigo-500"
+                  className="h-10 border-line px-3"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="jobDescription" className="text-slate-700">Job Description</Label>
+              <div className="space-y-2">
+                <Label htmlFor="jobDescription" className="text-ink">
+                  Job description
+                </Label>
                 <Textarea
                   id="jobDescription"
-                  placeholder="Paste the job description or key requirements..."
+                  placeholder="Paste the job description or key requirements…"
                   value={jobDescription}
                   onChange={(e) => setJobDescription(e.target.value)}
                   rows={6}
-                  className="border-slate-200 focus:ring-indigo-500 resize-none"
+                  className="border-line resize-none min-h-[132px] px-3 py-2.5"
                 />
               </div>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-bad">{error}</p>}
 
-              <Button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-              >
-                Generate Candidates
+              <Button type="submit" disabled={loading} className="h-10 w-full bg-pine hover:bg-pine/90 text-white">
+                Generate candidates
               </Button>
             </form>
           </CardContent>
