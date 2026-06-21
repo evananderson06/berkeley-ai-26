@@ -10,6 +10,9 @@ import { cn } from '@/lib/utils'
 import { useVoiceInterview } from '@/lib/voice/useVoiceInterview'
 import { VOICE } from '@/lib/voice/config'
 import { CodeEditor } from '@/components/code-editor'
+import { Dialog } from '@/components/ui/dialog'
+import { ResumeDisplay } from '@/components/resume-templates'
+import { LoadingScreen } from '@/components/loading-screen'
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -34,7 +37,10 @@ export default function InterviewPage() {
   const [notes, setNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
   const [ending, setEnding] = useState(false)
+  const [generatingSummary, setGeneratingSummary] = useState(false)
+  const [summaryProgress, setSummaryProgress] = useState(0)
   const [typedMessage, setTypedMessage] = useState('')
+  const [resumeOpen, setResumeOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -43,12 +49,22 @@ export default function InterviewPage() {
     setCandidate(candidates.find((c) => c.id === candidateId) ?? null)
   }, [candidateId])
 
-  const { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop, sendTyped, code, language } =
+  const { status, messages, interim, level, threshold, setThreshold, muted, toggleMute, error, start, stop, sendTyped, code, language } =
     useVoiceInterview({ candidate, candidateId })
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, interim])
+
+  // Creep the summary progress bar toward 90% while we wait on the API (there's no
+  // real progress signal); endInterview snaps it to 100 before navigating.
+  useEffect(() => {
+    if (!generatingSummary) return
+    const id = setInterval(() => {
+      setSummaryProgress((p) => (p < 90 ? p + Math.max(1, (90 - p) * 0.08) : p))
+    }, 200)
+    return () => clearInterval(id)
+  }, [generatingSummary])
 
   async function saveNotes() {
     localStorage.setItem(`interviewiq_notes_${candidateId}`, notes)
@@ -81,6 +97,8 @@ export default function InterviewPage() {
     stop()
     const hadTurns = messages.some((m) => m.role === 'user')
     if (hadTurns && candidate) {
+      setGeneratingSummary(true) // show the loading screen while the summary is written
+      setSummaryProgress(8)
       try {
         localStorage.setItem(`interviewiq_completed_${candidateId}`, 'true')
         const res = await fetch('/api/interview-summary', {
@@ -93,14 +111,16 @@ export default function InterviewPage() {
       } catch {
         /* still navigate — candidate is marked completed even if summary failed */
       }
+      setSummaryProgress(100)
     }
     router.push('/candidates')
   }
 
-  const active =
-    status === 'connecting' || status === 'listening' || status === 'thinking' || status === 'speaking'
   const meterPct = Math.min(100, (level / 0.3) * 100)
   const markerPct = Math.min(100, (threshold / 0.3) * 100)
+
+  if (generatingSummary)
+    return <LoadingScreen message="Writing up the interview summary…" progress={summaryProgress} />
 
   return (
     <div className="flex flex-col h-[calc(100vh-56px)]">
@@ -116,17 +136,26 @@ export default function InterviewPage() {
           <span
             className={cn(
               'text-xs font-medium px-2 py-1 rounded',
-              status === 'listening' && 'bg-emerald-50 text-emerald-700',
-              status === 'speaking' && 'bg-indigo-50 text-indigo-700',
-              status === 'thinking' && 'bg-amber-50 text-amber-700',
-              status === 'connecting' && 'bg-slate-100 text-slate-500',
-              status === 'paused' && 'bg-slate-100 text-slate-600',
-              status === 'error' && 'bg-red-50 text-red-700',
-              status === 'idle' && 'bg-slate-100 text-slate-400'
+              muted && 'bg-red-50 text-red-700',
+              !muted && status === 'listening' && 'bg-emerald-50 text-emerald-700',
+              !muted && status === 'speaking' && 'bg-indigo-50 text-indigo-700',
+              !muted && status === 'thinking' && 'bg-amber-50 text-amber-700',
+              !muted && status === 'connecting' && 'bg-slate-100 text-slate-500',
+              !muted && status === 'error' && 'bg-red-50 text-red-700',
+              !muted && status === 'idle' && 'bg-slate-100 text-slate-400'
             )}
           >
-            {STATUS_LABEL[status]}
+            {muted ? '🔇 Mic muted' : STATUS_LABEL[status]}
           </span>
+          <Button
+            onClick={() => setResumeOpen(true)}
+            disabled={!candidate}
+            variant="outline"
+            size="sm"
+            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
+            View résumé
+          </Button>
           <Button
             onClick={endInterview}
             disabled={ending}
@@ -138,6 +167,14 @@ export default function InterviewPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={resumeOpen}
+        onClose={() => setResumeOpen(false)}
+        title={candidate ? `${candidate.name} · résumé` : 'Résumé'}
+      >
+        {candidate && <ResumeDisplay candidate={candidate} />}
+      </Dialog>
 
       {/* Body: voice transcript + always-on code editor + notes */}
       <div className="flex flex-1 overflow-hidden">
@@ -190,17 +227,24 @@ export default function InterviewPage() {
             {error && <p className="text-xs text-red-600">{error}</p>}
 
             <div className="flex items-center gap-4">
-              {active ? (
-                <Button onClick={pause} variant="outline" className="border-slate-300 text-slate-700">
-                  ⏸ Pause
-                </Button>
-              ) : (
+              {status === 'error' ? (
                 <Button
                   onClick={() => start()}
                   disabled={!candidate || ending}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
-                  {status === 'paused' || messages.length > 0 ? '▶ Resume interview' : '🎙 Start voice interview'}
+                  🎙 Enable microphone
+                </Button>
+              ) : (
+                <Button
+                  onClick={toggleMute}
+                  disabled={!candidate || ending}
+                  className={cn(
+                    'text-white',
+                    muted ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                  )}
+                >
+                  {muted ? '🔇 Unmute mic' : '🎙 Mute mic'}
                 </Button>
               )}
 
@@ -236,9 +280,9 @@ export default function InterviewPage() {
             </div>
 
             <p className="text-[11px] text-slate-400">
-              Speak naturally. Talk over the candidate (above the red marker) and it stops to listen. Pause and
-              resume any time without losing the conversation. Default threshold {VOICE.THRESHOLD}; lower with
-              headphones, raise on open speakers.
+              Voice is always on — just talk. Talk over the candidate (above the red marker) and it stops to
+              listen. Use <span className="font-medium">Mute mic</span> when you need to step away. Default
+              threshold {VOICE.THRESHOLD}; lower with headphones, raise on open speakers.
             </p>
           </div>
 

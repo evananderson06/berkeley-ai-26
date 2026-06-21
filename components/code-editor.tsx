@@ -19,7 +19,8 @@ interface CodeEditorProps {
 }
 
 // The candidate "types" into this; the interviewer only watches, so it's
-// read-only. The cursor is kept pinned to the end as code streams in.
+// read-only. The view follows wherever the change is happening — the end of the
+// file while appending, or a mid-file line when an [EDIT]/[DELETE] patches it.
 export function CodeEditor({ value, language }: CodeEditorProps) {
   return (
     <MonacoEditor
@@ -41,10 +42,15 @@ export function CodeEditor({ value, language }: CodeEditorProps) {
         padding: { top: 12, bottom: 12 },
       }}
       onMount={(editor) => {
-        // Follow the "typing" as it streams in.
-        editor.onDidChangeModelContent(() => {
+        // Follow the "typing" as it streams in — scroll to wherever the edit landed
+        // (mid-file for an in-place patch, end of file for an append).
+        editor.onDidChangeModelContent((e) => {
           const model = editor.getModel()
-          if (model) editor.revealLine(model.getLineCount())
+          if (!model) return
+          const line = e.changes.length
+            ? e.changes[e.changes.length - 1].range.startLineNumber
+            : model.getLineCount()
+          editor.revealLineInCenterIfOutsideViewport(line)
         })
       }}
     />
