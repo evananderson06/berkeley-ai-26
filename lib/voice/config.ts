@@ -17,7 +17,26 @@ export const VOICE = {
   MIC_TIMESLICE_MS: 250, // MediaRecorder chunk cadence sent to Deepgram
 
   // ── TTS (Deepgram Aura-2, browser) ────────────────────────────────────────
-  TTS_MODEL: 'aura-2-thalia-en',
+  TTS_MODEL: 'aura-2-thalia-en', // default / fallback voice
+  // Aura-2 English voices we rotate through so each candidate sounds distinct.
+  TTS_VOICES: [
+    'aura-2-thalia-en',
+    'aura-2-andromeda-en',
+    'aura-2-helena-en',
+    'aura-2-hera-en',
+    'aura-2-luna-en',
+    'aura-2-cora-en',
+    'aura-2-aurora-en',
+    'aura-2-iris-en',
+    'aura-2-apollo-en',
+    'aura-2-arcas-en',
+    'aura-2-atlas-en',
+    'aura-2-orion-en',
+    'aura-2-orpheus-en',
+    'aura-2-zeus-en',
+    'aura-2-jupiter-en',
+    'aura-2-mars-en',
+  ],
   TTS_SAMPLE_RATE: 24000, // linear16 mono; playback AudioBuffers use this rate
   PLAYBACK_LEAD_S: 0.08, // jitter headroom before the first audio chunk of a reply
 
@@ -31,3 +50,11 @@ export const VOICE = {
 } as const
 
 export type VoiceState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'error'
+
+// Pick a stable voice for a candidate: random across candidates, consistent for
+// the same one across turns/sessions (hash the id so it never drifts).
+export function voiceForCandidate(seed: string): string {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0
+  return VOICE.TTS_VOICES[Math.abs(h) % VOICE.TTS_VOICES.length]
+}

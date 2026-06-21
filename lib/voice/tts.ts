@@ -11,7 +11,9 @@
 import { VOICE } from './config'
 
 export interface TtsController {
-  speak: (text: string) => void
+  speak: (text: string) => void // one-shot reply (e.g. the greeting)
+  feed: (text: string) => void // stream a clause of an in-progress reply
+  finishReply: () => void // no more clauses coming — allow the reply to end
   stop: () => void // barge-in: drop queued audio + halt server synthesis
   close: () => void
 }
@@ -33,11 +35,12 @@ function int16ToFloat32(ab: ArrayBuffer): Float32Array {
 export function createTts(
   accessToken: string,
   audioCtx: AudioContext,
-  cbs: TtsCallbacks = {}
+  cbs: TtsCallbacks = {},
+  model: string = VOICE.TTS_MODEL
 ): Promise<TtsController> {
   return new Promise((resolve, reject) => {
     const params = new URLSearchParams({
-      model: VOICE.TTS_MODEL,
+      model,
       encoding: 'linear16',
       sample_rate: String(VOICE.TTS_SAMPLE_RATE),
     })
@@ -50,14 +53,26 @@ export function createTts(
     let nextStart = 0
     let active = false // currently playing a reply
     let flushed = false // server signalled end of the current reply's audio
+    let expectingMore = false // more clauses of this reply are still coming
     let generation = 0 // bumped on stop() to invalidate in-flight audio
     const sources = new Set<AudioBufferSourceNode>()
 
+    // A reply ends only once the caller has stopped feeding clauses
+    // (expectingMore === false), the server has flushed, and the queue drained —
+    // so inter-clause gaps in a streamed reply don't flip the state machine.
     function maybeEnd(gen: number) {
-      if (active && flushed && sources.size === 0 && gen === generation) {
+      if (active && flushed && !expectingMore && sources.size === 0 && gen === generation) {
         active = false
         cbs.onSpeakingEnd?.()
       }
+    }
+
+    function synth(text: string) {
+      const t = text.trim()
+      if (!t || ws.readyState !== WebSocket.OPEN) return
+      flushed = false
+      ws.send(JSON.stringify({ type: 'Speak', text: t }))
+      ws.send(JSON.stringify({ type: 'Flush' })) // synthesize now → low time-to-first-audio
     }
 
     function enqueue(pcm: ArrayBuffer, gen: number) {
@@ -86,11 +101,16 @@ export function createTts(
 
     const controller: TtsController = {
       speak: (text) => {
-        const t = text.trim()
-        if (!t || ws.readyState !== WebSocket.OPEN) return
-        flushed = false
-        ws.send(JSON.stringify({ type: 'Speak', text: t }))
-        ws.send(JSON.stringify({ type: 'Flush' })) // synthesize now → low time-to-first-audio
+        expectingMore = false
+        synth(text)
+      },
+      feed: (text) => {
+        expectingMore = true
+        synth(text)
+      },
+      finishReply: () => {
+        expectingMore = false
+        maybeEnd(generation)
       },
       stop: () => {
         generation++ // invalidate queued + in-flight chunks
@@ -105,6 +125,7 @@ export function createTts(
         sources.clear()
         active = false
         flushed = false
+        expectingMore = false
         nextStart = audioCtx.currentTime
         // NB: we do NOT fire onSpeakingEnd here — the caller (hook) owns the
         // post-barge-in transition, avoiding a double state update.

@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Candidate, Message } from '@/types'
-import { VOICE, VoiceState } from './config'
+import { VOICE, VoiceState, voiceForCandidate } from './config'
 import { createMic, MicController } from './mic'
 import { startStt, SttSession } from './stt'
 import { createTts, TtsController } from './tts'
@@ -157,6 +157,27 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
     typeQueueRef.current = []
   }, [])
 
+  // Cancel an in-flight candidate answer (typed interruption or voice barge-in):
+  // abort the stream, keep the code typed so far in the editor, and drop the
+  // empty assistant bubble while persisting any partial narration. Returns
+  // whether a stream was actually in flight.
+  const interruptStream = useCallback((): boolean => {
+    if (!streamAbortRef.current) return false
+    streamAbortRef.current.abort()
+    streamAbortRef.current = null
+    if (typeTimerRef.current) {
+      clearTimeout(typeTimerRef.current)
+      typeTimerRef.current = null
+    }
+    if (typeQueueRef.current.length) {
+      const rest = typeQueueRef.current.join('')
+      typeQueueRef.current = []
+      setCodeBoth((prev) => prev + rest)
+    }
+    commitMessages(messagesRef.current.filter((m) => m.content.trim()))
+    return true
+  }, [commitMessages, setCodeBoth])
+
   // Stream the candidate's reply, splitting narration ([SPEAK] → chat + TTS)
   // from code ([CODE] → the editor, typed at ~15ms/token). The persona/qualityTier
   // prompt stays server-side. The current editor contents are sent as context and
@@ -180,6 +201,36 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       const parser = new DelimiterParser()
       let narration = ''
 
+      // Speak narration to Aura clause-by-clause as it streams, so the voice
+      // starts immediately and runs alongside the code typing (instead of all at
+      // once when the stream finishes). speakBuf holds text not yet at a clause
+      // boundary; fedAny tracks whether we've started a spoken reply.
+      let speakBuf = ''
+      let fedAny = false
+      const feedClauses = (final: boolean) => {
+        const tts = ttsRef.current
+        if (!tts) return
+        if (final) {
+          const rest = speakBuf.trim()
+          if (rest) {
+            tts.feed(rest)
+            fedAny = true
+          }
+          speakBuf = ''
+          return
+        }
+        // Flush everything up to the last sentence/line boundary.
+        const m = speakBuf.match(/^[\s\S]*[.!?\n]/)
+        if (m) {
+          const clause = m[0].trim()
+          if (clause) {
+            tts.feed(clause)
+            fedAny = true
+          }
+          speakBuf = speakBuf.slice(m[0].length)
+        }
+      }
+
       const updateNarration = (text: string) => {
         narration += text
         const next = messagesRef.current.slice()
@@ -187,6 +238,8 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
         // Update ref+state directly (avoid re-persisting on every token).
         messagesRef.current = next
         setMessagesState(next)
+        speakBuf += text
+        feedClauses(false)
       }
 
       const consume = (segText: string, parserOut = parser.push(segText)) => {
@@ -263,15 +316,24 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       else finalMsgs[assistantIdx] = { ...finalMsgs[assistantIdx], content: normalizeNarration(narration) }
       commitMessages(finalMsgs)
 
-      const spoken = normalizeNarration(narration).trim()
-      if (ttsRef.current && spoken) {
-        setStatus('speaking')
-        ttsRef.current.speak(spoken)
+      if (ttsRef.current) {
+        // A placeholder set only at the end (error/timeout) was never streamed —
+        // speak it now; otherwise flush the trailing clause.
+        if (!fedAny && narration.trim()) {
+          ttsRef.current.feed(normalizeNarration(narration).trim())
+          fedAny = true
+        } else {
+          feedClauses(true)
+        }
+        // onSpeakingStart/End (createTts callbacks) drive the speaking→listening
+        // transition; if nothing was spoken (pure-code answer) just keep listening.
+        if (fedAny) ttsRef.current.finishReply()
+        else goListening()
       } else {
         setStatus(fallbackStatus)
       }
     },
-    [commitMessages, language, pumpTyping, setStatus, stopTyping]
+    [commitMessages, goListening, language, pumpTyping, setStatus, stopTyping]
   )
 
   const sendTyped = useCallback(
@@ -280,24 +342,10 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       if (!trimmed || !candidateRef.current) return
       const prevStatus = statusRef.current
 
-      // Mid-stream interruption: cancel the candidate's in-flight answer, keep
-      // whatever they'd said/typed so far, then resume with the new message.
-      if (streamAbortRef.current) {
-        streamAbortRef.current.abort()
-        streamAbortRef.current = null
-        if (typeTimerRef.current) {
-          clearTimeout(typeTimerRef.current)
-          typeTimerRef.current = null
-        }
-        if (typeQueueRef.current.length) {
-          const rest = typeQueueRef.current.join('')
-          typeQueueRef.current = []
-          setCodeBoth((prev) => prev + rest)
-        }
-        commitMessages(messagesRef.current.filter((m) => m.content.trim()))
-      } else if (processingRef.current) {
-        return
-      }
+      // Mid-stream interruption: cancel the candidate's in-flight answer (keeping
+      // the partial), then resume with the new message. If nothing's streaming
+      // but a turn is still processing, ignore the send.
+      if (!interruptStream() && processingRef.current) return
 
       ttsRef.current?.stop()
       processingRef.current = true
@@ -308,7 +356,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
         if (streamAbortRef.current === null) processingRef.current = false
       })
     },
-    [commitMessages, sendToLLM, setCodeBoth]
+    [commitMessages, interruptStream, sendToLLM]
   )
 
   const commitTurn = useCallback(() => {
@@ -338,6 +386,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
           if (aboveSinceRef.current == null) aboveSinceRef.current = t
           else if (t - aboveSinceRef.current >= VOICE.DEBOUNCE_MS) {
             ttsRef.current?.stop()
+            interruptStream() // also cancel the candidate's still-streaming answer
             goListening()
           }
         } else {
@@ -348,7 +397,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       }
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [goListening])
+  }, [goListening, interruptStream])
 
   // start() handles BOTH a fresh start (seed greeting) and a resume (keep transcript).
   const start = useCallback(async () => {
@@ -390,14 +439,19 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       }
       micRef.current = mic
 
-      ttsRef.current = await createTts(accessToken, ctx, {
-        onSpeakingStart: () => setStatus('speaking'),
-        onSpeakingEnd: () => goListening(),
-        onError: (e) => {
-          console.error('[voice] tts error', e)
-          goListening()
+      ttsRef.current = await createTts(
+        accessToken,
+        ctx,
+        {
+          onSpeakingStart: () => setStatus('speaking'),
+          onSpeakingEnd: () => goListening(),
+          onError: (e) => {
+            console.error('[voice] tts error', e)
+            goListening()
+          },
         },
-      })
+        voiceForCandidate(cand.id)
+      )
 
       sttRef.current = await startStt(accessToken, {
         onInterim: (txt) => {
@@ -465,7 +519,8 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   useEffect(() => {
     if (status !== 'speaking') return
     const id = setTimeout(() => {
-      if (statusRef.current === 'speaking') goListening()
+      // Don't yank a long but legitimately-streaming coding answer off 'speaking'.
+      if (statusRef.current === 'speaking' && streamAbortRef.current === null) goListening()
     }, SPEAKING_WATCHDOG_MS)
     return () => clearTimeout(id)
   }, [status, goListening])
