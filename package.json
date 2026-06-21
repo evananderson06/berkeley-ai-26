@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.105.0",
     "@base-ui/react": "^1.6.0",
     "@deepgram/sdk": "^5.4.0",
+    "@monaco-editor/react": "^4.7.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/sdk-trace-base": "^2.8.0",
     "@opentelemetry/sdk-trace-node": "^2.8.0",

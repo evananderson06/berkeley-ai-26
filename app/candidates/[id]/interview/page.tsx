@@ -9,6 +9,7 @@ import { Candidate } from '@/types'
 import { cn } from '@/lib/utils'
 import { useVoiceInterview } from '@/lib/voice/useVoiceInterview'
 import { VOICE } from '@/lib/voice/config'
+import { CodingInterview } from '@/components/coding-interview'
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -33,6 +34,7 @@ export default function InterviewPage() {
   const [notes, setNotes] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
   const [ending, setEnding] = useState(false)
+  const [codingMode, setCodingMode] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -81,6 +83,11 @@ export default function InterviewPage() {
     router.push('/candidates')
   }
 
+  function enterCodingMode() {
+    stop() // pause the voice pipeline while the candidate codes
+    setCodingMode(true)
+  }
+
   const active =
     status === 'connecting' || status === 'listening' || status === 'thinking' || status === 'speaking'
   const meterPct = Math.min(100, (level / 0.3) * 100)
@@ -112,6 +119,17 @@ export default function InterviewPage() {
             {STATUS_LABEL[status]}
           </span>
           <Button
+            onClick={() => (codingMode ? setCodingMode(false) : enterCodingMode())}
+            variant="outline"
+            size="sm"
+            className={cn(
+              'border-slate-200 hover:bg-slate-50',
+              codingMode ? 'text-indigo-700 border-indigo-200 bg-indigo-50' : 'text-slate-600'
+            )}
+          >
+            {codingMode ? '← Back to interview' : '💻 Coding question'}
+          </Button>
+          <Button
             onClick={endInterview}
             disabled={ending}
             variant="outline"
@@ -123,7 +141,10 @@ export default function InterviewPage() {
         </div>
       </div>
 
-      {/* Body: transcript + notes */}
+      {/* Body: the coding panel when a coding question is in progress, else the voice transcript + notes */}
+      {codingMode && candidate ? (
+        <CodingInterview candidate={candidate} candidateId={candidateId} />
+      ) : (
       <div className="flex flex-1 overflow-hidden">
         {/* Transcript + voice controls */}
         <div className="flex flex-col flex-1 border-r border-slate-200">
@@ -250,6 +271,7 @@ export default function InterviewPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
