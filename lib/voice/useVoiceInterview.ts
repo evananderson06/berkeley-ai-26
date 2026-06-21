@@ -55,6 +55,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   const [interim, setInterim] = useState('')
   const [level, setLevel] = useState(0)
   const [threshold, setThresholdState] = useState<number>(VOICE.THRESHOLD)
+  const [muted, setMutedState] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Always-present coding editor: code the candidate "types" (and edits) while they talk.
   const [code, setCode] = useState('')
@@ -63,6 +64,8 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
   const statusRef = useRef<VoiceState>('idle')
   const messagesRef = useRef<Message[]>([])
   const thresholdRef = useRef<number>(VOICE.THRESHOLD)
+  const mutedRef = useRef(false)
+  const unlockHandlerRef = useRef<(() => void) | null>(null)
   const candidateRef = useRef<Candidate | null>(candidate)
   const pendingRef = useRef('')
   const processingRef = useRef(false)
@@ -144,6 +147,20 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
     thresholdRef.current = n
     setThresholdState(n)
   }, [])
+
+  // Mute = silence the mic (the session stays fully live). Clears any half-captured
+  // turn so it isn't committed when you mute mid-sentence.
+  const setMuted = useCallback((m: boolean) => {
+    mutedRef.current = m
+    setMutedState(m)
+    micRef.current?.setMuted(m)
+    if (m) {
+      pendingRef.current = ''
+      setInterim('')
+    }
+  }, [])
+
+  const toggleMute = useCallback(() => setMuted(!mutedRef.current), [setMuted])
 
   const applyCode = useCallback((next: string) => {
     codeRef.current = next
@@ -442,6 +459,16 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       return
     }
 
+    // Always-on mode auto-starts without a click, so the AudioContext can begin
+    // 'suspended' (autoplay policy). Resume it on the first user gesture anywhere
+    // so the candidate's voice becomes audible. (Mic capture itself doesn't need this.)
+    if (!unlockHandlerRef.current) {
+      const unlock = () => ctxRef.current?.resume().catch(() => {})
+      unlockHandlerRef.current = unlock
+      window.addEventListener('pointerdown', unlock)
+      window.addEventListener('keydown', unlock)
+    }
+
     try {
       const tokRes = await fetch('/api/deepgram-token', { method: 'POST' })
       const tok = await tokRes.json()
@@ -455,6 +482,7 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
         return
       }
       micRef.current = mic
+      mic.setMuted(mutedRef.current) // honor a mute toggled before/while connecting
 
       ttsRef.current = await createTts(
         accessToken,
@@ -512,6 +540,11 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
       runIdRef.current++ // stop the playback runner + typing loops
       streamAbortRef.current?.abort()
       streamAbortRef.current = null
+      if (unlockHandlerRef.current) {
+        window.removeEventListener('pointerdown', unlockHandlerRef.current)
+        window.removeEventListener('keydown', unlockHandlerRef.current)
+        unlockHandlerRef.current = null
+      }
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
       micRef.current?.close()
@@ -529,8 +562,13 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
     [setStatus]
   )
 
-  const pause = useCallback(() => teardown('paused'), [teardown]) // → button shows "Resume"
   const stop = useCallback(() => teardown('idle'), [teardown]) // full end (unmount / End Interview)
+
+  // Always-on: connect automatically once the candidate is loaded — no Start/Pause.
+  // start() guards on status so this never double-connects; the only control is mute.
+  useEffect(() => {
+    if (candidate && statusRef.current === 'idle') void start()
+  }, [candidate, start])
 
   // Watchdog: never get permanently stuck in 'speaking' (empty/failed/zero-audio reply).
   useEffect(() => {
@@ -551,9 +589,11 @@ export function useVoiceInterview({ candidate, candidateId }: Args) {
     level,
     threshold,
     setThreshold,
+    muted,
+    setMuted,
+    toggleMute,
     error,
     start,
-    pause,
     stop,
     sendTyped,
     code,

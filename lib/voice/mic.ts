@@ -13,6 +13,9 @@ export interface MicController {
   startRecording(onChunk: (blob: Blob) => void): void
   /** Stop emitting chunks (keeps the stream + analyser alive). */
   stopRecording(): void
+  /** Mute/unmute capture. Muting silences the track (RMS → 0) but keeps the
+   *  recorder emitting silent frames, so the STT socket stays alive. */
+  setMuted(muted: boolean): void
   /** Tear everything down and release the mic. */
   close(): void
 }
@@ -65,6 +68,14 @@ export async function createMic(audioCtx: AudioContext): Promise<MicController> 
     stopRecording() {
       if (recorder && recorder.state !== 'inactive') recorder.stop()
       recorder = null
+    },
+
+    setMuted(muted) {
+      // Disable the track rather than stop it: the recorder keeps producing
+      // (silent) frames so Deepgram doesn't time out, and the analyser reads ~0.
+      stream.getAudioTracks().forEach((t) => {
+        t.enabled = !muted
+      })
     },
 
     close() {

@@ -43,7 +43,7 @@ export default function InterviewPage() {
     setCandidate(candidates.find((c) => c.id === candidateId) ?? null)
   }, [candidateId])
 
-  const { status, messages, interim, level, threshold, setThreshold, error, start, pause, stop, sendTyped, code, language } =
+  const { status, messages, interim, level, threshold, setThreshold, muted, toggleMute, error, start, stop, sendTyped, code, language } =
     useVoiceInterview({ candidate, candidateId })
 
   useEffect(() => {
@@ -97,8 +97,6 @@ export default function InterviewPage() {
     router.push('/candidates')
   }
 
-  const active =
-    status === 'connecting' || status === 'listening' || status === 'thinking' || status === 'speaking'
   const meterPct = Math.min(100, (level / 0.3) * 100)
   const markerPct = Math.min(100, (threshold / 0.3) * 100)
 
@@ -116,16 +114,16 @@ export default function InterviewPage() {
           <span
             className={cn(
               'text-xs font-medium px-2 py-1 rounded',
-              status === 'listening' && 'bg-emerald-50 text-emerald-700',
-              status === 'speaking' && 'bg-indigo-50 text-indigo-700',
-              status === 'thinking' && 'bg-amber-50 text-amber-700',
-              status === 'connecting' && 'bg-slate-100 text-slate-500',
-              status === 'paused' && 'bg-slate-100 text-slate-600',
-              status === 'error' && 'bg-red-50 text-red-700',
-              status === 'idle' && 'bg-slate-100 text-slate-400'
+              muted && 'bg-red-50 text-red-700',
+              !muted && status === 'listening' && 'bg-emerald-50 text-emerald-700',
+              !muted && status === 'speaking' && 'bg-indigo-50 text-indigo-700',
+              !muted && status === 'thinking' && 'bg-amber-50 text-amber-700',
+              !muted && status === 'connecting' && 'bg-slate-100 text-slate-500',
+              !muted && status === 'error' && 'bg-red-50 text-red-700',
+              !muted && status === 'idle' && 'bg-slate-100 text-slate-400'
             )}
           >
-            {STATUS_LABEL[status]}
+            {muted ? '🔇 Mic muted' : STATUS_LABEL[status]}
           </span>
           <Button
             onClick={endInterview}
@@ -190,17 +188,24 @@ export default function InterviewPage() {
             {error && <p className="text-xs text-red-600">{error}</p>}
 
             <div className="flex items-center gap-4">
-              {active ? (
-                <Button onClick={pause} variant="outline" className="border-slate-300 text-slate-700">
-                  ⏸ Pause
-                </Button>
-              ) : (
+              {status === 'error' ? (
                 <Button
                   onClick={() => start()}
                   disabled={!candidate || ending}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
-                  {status === 'paused' || messages.length > 0 ? '▶ Resume interview' : '🎙 Start voice interview'}
+                  🎙 Enable microphone
+                </Button>
+              ) : (
+                <Button
+                  onClick={toggleMute}
+                  disabled={!candidate || ending}
+                  className={cn(
+                    'text-white',
+                    muted ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                  )}
+                >
+                  {muted ? '🔇 Unmute mic' : '🎙 Mute mic'}
                 </Button>
               )}
 
@@ -236,9 +241,9 @@ export default function InterviewPage() {
             </div>
 
             <p className="text-[11px] text-slate-400">
-              Speak naturally. Talk over the candidate (above the red marker) and it stops to listen. Pause and
-              resume any time without losing the conversation. Default threshold {VOICE.THRESHOLD}; lower with
-              headphones, raise on open speakers.
+              Voice is always on — just talk. Talk over the candidate (above the red marker) and it stops to
+              listen. Use <span className="font-medium">Mute mic</span> when you need to step away. Default
+              threshold {VOICE.THRESHOLD}; lower with headphones, raise on open speakers.
             </p>
           </div>
 
