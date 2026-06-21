@@ -7,15 +7,26 @@ export interface CandidateSpec {
   jobTitle: string
   jobDescription: string
   index: number
-  tierSpec: 'strong' | 'adequate_senior' | 'adequate_junior' | 'poor_deceptive' | 'poor_underqualified'
+  tierSpec:
+    | 'exceptional_standout'
+    | 'strong_solid'
+    | 'strong_understated'
+    | 'adequate_senior'
+    | 'adequate_junior'
+    | 'mediocre_coaster'
+    | 'poor_deceptive'
+    | 'poor_underqualified'
   resumeStyle: 'executive' | 'modern' | 'classic' | 'flashy' | 'garish'
   nameHint?: string       // pre-assigned full name — Claude must use this exactly
 }
 
 const TIER_PROMPTS: Record<CandidateSpec['tierSpec'], string> = {
-  strong: `Generate ONE clearly excellent candidate. They have deep relevant experience, specific quantified achievements, and match the role well. qualityTier must be "strong". redFlags should be empty. greenFlags should list 3–4 genuine standout qualities.`,
+  exceptional_standout: `Generate ONE truly exceptional, standout candidate — the clear best hire in any pool. Deep, highly relevant experience with impressive quantified achievements, excellent judgment, and impact beyond their level. qualityTier must be "exceptional". redFlags must be empty. greenFlags: 4–5 genuinely outstanding qualities.`,
+  strong_solid: `Generate ONE clearly strong candidate — a confident, reliable hire, just short of exceptional. Solid relevant experience with specific, quantified achievements and good judgment. qualityTier must be "strong". redFlags empty (or one trivial nitpick). greenFlags: 3–4 genuine strengths.`,
+  strong_understated: `Generate ONE candidate who is genuinely STRONG but UNDERSTATED — a "diamond in the rough" who is easy to underestimate. Their résumé is solid and their real ability is high, but they're humble and soft-spoken and tend to undersell their accomplishments rather than broadcast them. qualityTier must be "strong". redFlags empty. greenFlags: 3–4 real strengths, and note they're easy to overlook on a quick read.`,
   adequate_senior: `Generate ONE solid but unremarkable senior-level candidate. Competent, some relevant experience, but answers tend to be vague and they don't quite stand out. qualityTier must be "adequate". A couple of minor redFlags (e.g. limited scope, relies on tools without understanding them). 1–2 greenFlags.`,
   adequate_junior: `Generate ONE adequate but less experienced candidate. They have potential and enthusiasm but are a notch below the senior adequate candidate. qualityTier must be "adequate". redFlags around depth or breadth gaps. 1–2 greenFlags around coachability or initiative.`,
+  mediocre_coaster: `Generate ONE middling candidate who has quietly coasted. They've held relevant-looking roles for a while, but their understanding is shallow and second-hand — they lean on their team, their tools, and rehearsed talking points, and can't go deep when pressed. Not dishonest, just limited (and not fully aware of it). qualityTier must be "mediocre". redFlags around shallow depth, over-reliance on others, and vague ownership. greenFlags: maybe 1 (tenure, reliability, or pleasantness).`,
   poor_deceptive: `Generate ONE deceptively impressive candidate. Their resume looks great — name-brand companies, impressive-sounding titles. But they are hiding serious red flags discoverable only through careful interview questions: e.g. they claim credit for work they didn't drive, they have 3+ jobs in under a year each, they can't explain technical decisions they claim to have made, they become defensive when pressed. qualityTier must be "poor". greenFlags should describe how they LOOK on paper (polished, impressive titles, etc). redFlags should be the hidden concerns. Resume prose must be flawless.`,
   poor_underqualified: `Generate ONE clearly underqualified candidate. They're enthusiastic but simply not ready for this level. qualityTier must be "poor". Their resume should have 3–5 realistic grammar/spelling errors (typos like "responsable", "managment", "expirience"; grammar mistakes; run-on sentences — rushed first-draft quality). greenFlags: maybe 1 (enthusiasm or coachability). redFlags: limited experience, overestimates capability.`,
 }
@@ -40,7 +51,7 @@ const SINGLE_CANDIDATE_TOOL = {
       yearsExperience: { type: 'number' },
       summary: { type: 'string', description: '1–2 sentence summary for the candidate card' },
       skills: { type: 'array', items: { type: 'string' }, description: '5–8 relevant skills' },
-      qualityTier: { type: 'string', enum: ['strong', 'adequate', 'poor'] },
+      qualityTier: { type: 'string', enum: ['exceptional', 'strong', 'adequate', 'mediocre', 'poor'] },
       resumeStyle: { type: 'string', enum: ['classic', 'modern', 'executive', 'flashy', 'garish'] },
       redFlags: { type: 'array', items: { type: 'string' } },
       greenFlags: { type: 'array', items: { type: 'string' } },

@@ -33,7 +33,7 @@ const FEEDBACK_TOOL = {
       },
       correctHire: {
         type: 'string',
-        description: 'The candidate ID of the objectively best hire based on qualityTier and greenFlags',
+        description: 'The candidate ID of the objectively best hire by TRUE quality (exceptional > strong > adequate > mediocre > poor), using qualityTier and greenFlags — not how impressive they seemed in the interview.',
       },
       userPickedCorrectly: {
         type: 'boolean',
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
           system: `You are an expert hiring coach evaluating an interviewer's performance in a simulated interview session.
 You have access to the full candidate profiles (including hidden quality tiers and red/green flags that the interviewer could not see), all interview transcripts, and the interviewer's notes.
 Be specific, honest, and constructive. Reference actual quotes and moments from the transcripts when possible.
-The "correct hire" is always the candidate with qualityTier "strong". If no strong candidate exists, pick the best "adequate" one.`,
+Rank true quality as exceptional > strong > adequate > mediocre > poor. The "correct hire" is the single best candidate by that ranking — normally the lone "exceptional" candidate, or, if none exists, the strongest tier present (break ties with greenFlags). Judge on TRUE quality, NOT how polished someone seemed: a genuinely strong candidate may interview modestly/nervously and an "exceptional"-looking one may be the deceptive trap. Reward the interviewer for seeing through both — undervaluing a quietly strong candidate or being fooled by a polished weak one are both mistakes worth calling out.`,
           messages: [
             {
               role: 'user',

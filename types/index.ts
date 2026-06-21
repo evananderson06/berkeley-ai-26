@@ -29,7 +29,7 @@ export interface Candidate {
   yearsExperience: number
   summary: string
   skills: string[]
-  qualityTier: 'strong' | 'adequate' | 'poor'
+  qualityTier: 'exceptional' | 'strong' | 'adequate' | 'mediocre' | 'poor'
   redFlags: string[]
   greenFlags: string[]
   resume: Resume

@@ -1,6 +1,6 @@
 # InterviewIQ
 
-**An AI hiring simulator.** You play the *interviewer*: enter a role, get a pool of five realistic AI candidates, interview them by voice (or text) — including live coding questions in a shared editor — then commit to a hire. The app grades **you** on how well you interviewed and whether you picked the right person, revealing the hidden truth about each candidate you couldn't see going in.
+**An AI hiring simulator.** You play the *interviewer*: enter a role, get a pool of eight realistic AI candidates, interview them by voice (or text) — including live coding questions in a shared editor — then commit to a hire. The app grades **you** on how well you interviewed and whether you picked the right person, revealing the hidden truth about each candidate you couldn't see going in.
 
 The twist: each candidate has a **hidden "truthfulness profile"** (how good they really are, what they're hiding) that never reaches the browser. A polished résumé can hide a weak hire; a nervous, stuttering candidate might be the best in the pool. Your job is to find out through the conversation.
 
@@ -91,7 +91,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ## The full user journey
 
 ```
- ┌─────────────┐   generate 5 candidates    ┌──────────────┐   pick one to talk to   ┌──────────────────────┐
+ ┌─────────────┐   generate 8 candidates    ┌──────────────┐   pick one to talk to   ┌──────────────────────┐
  │  Landing /  │ ─────────────────────────▶ │ Candidates   │ ──────────────────────▶ │ Résumé  /  Interview │
  │ (job title  │  POST /api/generate-        │ /candidates  │                          │  /candidates/[id]/…  │
  │  + JD)      │  candidate ×5 (parallel)    │              │ ◀──── back, repeat ────  │                      │
@@ -105,9 +105,9 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
                                             └──────────────┘                                └──────────────────┘
 ```
 
-1. **Landing (`/`)** — Enter a **job title** and **job description**. On submit, the app fires **five parallel** `POST /api/generate-candidate` calls (one per "slot" in a fixed pipeline of candidate archetypes), shows a progress loading screen, then saves the resulting candidates to `localStorage` and routes to the pool.
+1. **Landing (`/`)** — Enter a **job title** and **job description**. On submit, the app fires **eight parallel** `POST /api/generate-candidate` calls (one per "slot" in a fixed pipeline of candidate archetypes), shows a progress loading screen, then saves the resulting candidates to `localStorage` and routes to the pool.
 
-2. **Candidates (`/candidates`)** — A grid of the 5 candidates (avatar, role, years, skills). Each card links to the candidate's **résumé** and to **interview** them. Once interviewed, a card shows an "Interviewed" badge and a jot-note summary.
+2. **Candidates (`/candidates`)** — A grid of the 8 candidates (avatar, role, years, skills). Each card links to the candidate's **résumé** and to **interview** them. Once interviewed, a card shows an "Interviewed" badge and a jot-note summary.
 
 3. **Résumé (`/candidates/[id]/resume`)** — The candidate's résumé, rendered in one of **six visual formats** (classic, modern, executive, flashy, garish, …) chosen at generation time. This is a *document* the candidate "submitted," so it's deliberately styled like a real résumé, not like the app.
 
@@ -139,15 +139,22 @@ A single **Next.js 14 (App Router)** app. The browser holds all session state (`
 
 This is what makes the interviews feel real. Each candidate is generated for the specific job, with a **hidden behavioral profile** the interview agent role-plays.
 
-**Quality tiers (the pool is always a deliberate mix).** The landing page requests five fixed archetypes so every pool has range:
+**Quality ladder (true quality — hidden from the interviewer).** Candidates are rated on a five-rung ladder that drives their behavior and the "correct hire": **exceptional › strong › adequate › mediocre › poor**.
 
-| Slot | Spec | Tier | Behaves like |
-|---|---|---|---|
-| 1 | `strong` | strong | Clearly excellent — specific, quantified, deep. |
-| 2 | `adequate_senior` | adequate | Competent but vague; speaks in generalities. |
-| 3 | `adequate_junior` | adequate | Promising but a notch below; gaps in depth. |
-| 4 | `poor_deceptive` | poor | Impressive on paper, hiding real red flags; cracks only under careful probing. |
-| 5 | `poor_underqualified` | poor | Enthusiastic but not ready; overestimates themselves (résumé even has typos). |
+**The slate (8 archetypes).** Each pool is generated from a fixed set of eight archetypes so it spans the realistic spectrum — including two *traps*: a genuinely strong candidate who interviews modestly, and a weak one who looks impressive on paper.
+
+| Archetype (`tierSpec`) | True tier | Behaves like |
+|---|---|---|
+| `exceptional_standout` | exceptional | The clear best hire — deep, quantified, sharp judgment. **(The "correct" pick.)** |
+| `strong_solid` | strong | Genuinely good — confident and reliable. |
+| `strong_understated` | strong | **Trap:** genuinely strong but humble and soft-spoken — easy to undervalue. |
+| `adequate_senior` | adequate | Competent but vague; speaks in generalities. |
+| `adequate_junior` | adequate | Promising but a notch below; gaps in depth. |
+| `mediocre_coaster` | mediocre | Coasts; shallow/second-hand understanding, leans on team & tools. |
+| `poor_deceptive` | poor | **Trap:** impressive on paper, hiding real red flags; cracks only under careful probing. |
+| `poor_underqualified` | poor | Enthusiastic but not ready; overestimates themselves (résumé even has typos). |
+
+The count and mix are just the `CANDIDATE_PIPELINE` array in `app/page.tsx` — add, remove, or re-tier slots freely.
 
 **Rings of knowledge (scope of competence).** The interview agent treats its knowledge as three concentric rings and decides which one a question falls in:
 

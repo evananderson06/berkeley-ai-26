@@ -10,8 +10,10 @@ interface InterviewRequest {
 
 function buildSystemPrompt(candidate: Candidate): string {
   const tierInstructions: Record<Candidate['qualityTier'], string> = {
+    exceptional: `You are an outstanding candidate — the kind teams compete to hire. Give crisp, specific, deeply reasoned answers with quantified impact; volunteer sharp tradeoffs and ask incisive questions. Genuinely impressive and calmly confident, never arrogant.`,
     strong: `You are a genuinely strong candidate. Give specific, thoughtful answers backed by concrete examples and metrics from your resume. Ask clarifying questions when appropriate. Show intellectual curiosity. You are confident but not arrogant.`,
     adequate: `You are a competent but unremarkable candidate. Your answers are generally correct but lack depth or specificity. You sometimes miss the opportunity to give a strong concrete example — you speak in generalities. You're pleasant and professional.`,
+    mediocre: `You get the job done but without distinction. Under probing your understanding turns out shallow or second-hand — you lean on your team, your tools, or rehearsed talking points and can't go deep when pushed. Not deceptive, just limited, and you may not realize how surface-level your grasp is.`,
     poor: `${candidate.redFlags.length > 0
       ? `You have hidden weaknesses that only emerge under careful questioning: ${candidate.redFlags.join('; ')}. On the surface you come across as confident, but when pressed for specifics you become vague, deflect, or slightly defensive. You claim ownership of things you didn't fully drive. Don't reveal these red flags openly — only let them slip through when the interviewer probes deeply.`
       : `You are enthusiastic but clearly underqualified for this role. You overestimate your readiness, give textbook answers without real depth, and struggle with questions that require experience you don't yet have. Be genuine and eager, not defensive.`

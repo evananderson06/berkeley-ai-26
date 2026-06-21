@@ -45,11 +45,14 @@ const CANDIDATE_PIPELINE: Array<{
   message: string
   progress: number
 }> = [
-  { spec: { tierSpec: 'strong',               resumeStyle: 'executive' }, message: 'Creating the standout candidate…',   progress: 10 },
-  { spec: { tierSpec: 'adequate_senior',       resumeStyle: 'modern'   }, message: 'Building a solid mid-level hire…',   progress: 28 },
-  { spec: { tierSpec: 'adequate_junior',       resumeStyle: 'classic'  }, message: 'Adding a promising junior…',          progress: 46 },
-  { spec: { tierSpec: 'poor_deceptive',        resumeStyle: 'flashy'   }, message: 'Hiding a few red flags…',            progress: 64 },
-  { spec: { tierSpec: 'poor_underqualified',   resumeStyle: 'garish'   }, message: 'Finishing the candidate pool…',      progress: 82 },
+  { spec: { tierSpec: 'exceptional_standout', resumeStyle: 'executive' }, message: 'Sourcing a standout candidate…',         progress: 12 },
+  { spec: { tierSpec: 'strong_solid',         resumeStyle: 'modern'    }, message: 'Lining up a strong contender…',          progress: 24 },
+  { spec: { tierSpec: 'strong_understated',   resumeStyle: 'classic'   }, message: 'Adding someone easy to underestimate…',  progress: 36 },
+  { spec: { tierSpec: 'adequate_senior',      resumeStyle: 'modern'    }, message: 'Rounding out the senior pool…',          progress: 48 },
+  { spec: { tierSpec: 'adequate_junior',      resumeStyle: 'classic'   }, message: 'Adding a promising up-and-comer…',       progress: 60 },
+  { spec: { tierSpec: 'mediocre_coaster',     resumeStyle: 'flashy'    }, message: 'Filling out the middle of the pack…',    progress: 72 },
+  { spec: { tierSpec: 'poor_deceptive',       resumeStyle: 'executive' }, message: 'Slipping in a polished wildcard…',       progress: 84 },
+  { spec: { tierSpec: 'poor_underqualified',  resumeStyle: 'garish'    }, message: 'Finishing the candidate pool…',          progress: 94 },
 ]
 
 export default function HomePage() {
@@ -137,8 +140,8 @@ export default function HomePage() {
           <CardHeader className="px-7 pt-7 pb-5">
             <CardTitle className="text-base font-semibold text-ink">New session</CardTitle>
             <CardDescription className="text-ink-2 text-sm leading-relaxed">
-              We&apos;ll create 5 realistic candidates — one standout, a few middle-of-the-pack, and one to test your
-              judgment.
+              We&apos;ll create 8 realistic candidates spanning the full range — a clear standout, solid hires, some
+              middle-of-the-pack, and a couple designed to test your judgment.
             </CardDescription>
           </CardHeader>
           <CardContent className="px-7 pb-7">

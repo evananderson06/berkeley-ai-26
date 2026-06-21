@@ -33,9 +33,11 @@ export function deriveArchetype(candidate: Candidate): CodingArchetype {
       // Hidden red flags → surface confidence that outruns ability.
       // Genuinely underqualified-but-honest → eager but lost.
       return candidate.redFlags.length > 0 ? 'confident-exaggerator' : 'eager-struggler'
+    case 'exceptional':
     case 'strong':
       return isStrongCommunicator(candidate) ? 'articulate-ace' : 'quiet-star'
     case 'adequate':
+    case 'mediocre':
     default:
       return 'steady-mid'
   }
