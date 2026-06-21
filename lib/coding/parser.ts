@@ -159,8 +159,11 @@ export class ActionAssembler {
     }
     // Stream narration out at sentence boundaries so speech starts quickly (low
     // time-to-first-audio) instead of waiting for the whole [SPEAK] run to close.
+    // A terminator only counts if it's followed by whitespace/end (or is a
+    // newline) — so a dot inside "a.b" or "3.14" doesn't split the clause, which
+    // would make TTS speak a clause-final "a." with a full-stop pause.
     if (this.runChannel === 'speak') {
-      const m = this.runBuf.match(/^[\s\S]*[.!?\n]/)
+      const m = this.runBuf.match(/^[\s\S]*(?:[.!?](?=\s)|\n)/)
       if (m && m[0].trim()) {
         out.push({ kind: 'speak', text: m[0] })
         this.runBuf = this.runBuf.slice(m[0].length)
